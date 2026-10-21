@@ -74,4 +74,4 @@ Book2Course/
 
 改变使用方式、配置、依赖或支持范围时，同步更新两个 README、详细参考、实现状态与验证记录。新能力应有真实代码和测试或实测证据；规划项在验收前保持“待实现 / 部分实现”。
 
-执行 `python scripts/build_documents.py` 导出当前说明书，需要 ReportLab（包含于 `.[test]`）。输出为 `output/pdf/LivelyClass_绘声绘课_产品说明与使用指南.pdf`，支持目录、章节书签、中文表格与跨页表头。历史打包脚本使用归档快照，见[归档说明](archive/2026-09/README.md)。
+执行 `python scripts/build_documents.py` 导出当前说明书，需要 ReportLab（包含于 `.[test]`）。输出为 `output/pdf/LivelyClass_AI教育Agent_产品说明与使用指南.pdf`，支持目录、章节书签、中文表格与跨页表头。历史打包脚本使用归档快照，见[归档说明](archive/2026-09/README.md)。

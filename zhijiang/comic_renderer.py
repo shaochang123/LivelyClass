@@ -123,7 +123,7 @@ def comic_svg(title,lines,panel,characters,template,board,*,page=1,source_page=N
     scale={'wide':.73,'medium':.94,'close':1.13}[panel['shot']]
     parts += [character_svg(active,1110,614,scale,emotion=panel['emotion'],gesture=panel['gesture'],shot=panel['shot'],ink=ink),
               _text([active['name']],855,638,size=23,bold=True,color=ink)]
-    source=f'教材第 {source_page} 页' if source_page is not None else 'LivelyClass 绘声绘课'
+    source=f'教材第 {source_page} 页' if source_page is not None else 'Lively Class——AI教育Agent'
     parts += [_text([source],42,699,size=17,color=template.muted),
               _text([f'{page:02d}'],1190,699,size=17,color=template.muted),'</svg>']
     return ''.join(parts).encode()
@@ -137,7 +137,7 @@ def panorama_svg(title_lines,lines,panel,cast,template,board,page,source_page):
     board_height=min(390,536-top-12)
     if board_height<330:raise PresentationError('漫剧宽幅分镜需要更短的主题标题。')
     tail=('M172 597L137 592L172 616' if panel['speaker']=='teacher' else 'M1108 597L1150 592L1108 616')
-    source=f'教材第 {source_page} 页' if source_page is not None else 'LivelyClass 绘声绘课'
+    source=f'教材第 {source_page} 页' if source_page is not None else 'Lively Class——AI教育Agent'
     return ('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'
         '<title>'+html.escape(' '.join(title_lines))+'</title><desc>宽幅教学板书与角色对白分镜，图示内容完整保留。</desc>'
         +backdrop_elements(template)+_text(title_lines,44,48,size=32,bold=True,color=ink)
@@ -176,7 +176,7 @@ def bookend_svg(title,lines,characters,template,page):
         +_text(lines,80,body_y,size=27,color=template.ink,line_height=35)
         +character_svg(characters[0],1040,455,1.06,emotion='confident',gesture='open',shot='wide',ink=template.ink)
         +character_svg(characters[1],1110,615,.82,emotion='curious',gesture='think',shot='medium',ink=template.ink)
-        +_text(['LivelyClass 绘声绘课'],42,699,size=17,color=template.muted)
+        +_text(['Lively Class——AI教育Agent'],42,699,size=17,color=template.muted)
         +_text([f'{page:02d}'],1190,699,size=17,color=template.muted)+'</svg>').encode()
 
 
@@ -231,7 +231,7 @@ def render_comic_deck(lesson,output,*,audio_files=None):
             if s.math_scene or s.visual_scene else root/f'audio-{i-1}.wav' for i,s in enumerate(lesson.segments,1)]
     if len(audio_files)!=len(lesson.segments):raise PresentationError('漫剧配音数量与课程不一致。')
     deck=Presentation();deck.slide_width=Inches(PAGE_W);deck.slide_height=Inches(PAGE_H)
-    deck.core_properties.title=lesson.title;deck.core_properties.subject='LivelyClass 原创矢量漫剧'
+    deck.core_properties.title=lesson.title;deck.core_properties.subject='Lively Class——AI教育Agent · 原创矢量漫剧'
     assets={};pages=[];segments=[];bookends=[]
 
     def add_page(svg,kind,index=None,panel=None,segment=None):

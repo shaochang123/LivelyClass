@@ -1,4 +1,4 @@
-# LivelyClass 绘声绘课
+# Lively Class——AI教育Agent
 
 **Language / 语言:** [简体中文](README.md) | [English](README.en.md)
 
@@ -13,7 +13,7 @@ Convert textbooks, notes and knowledge PDFs you have permission to use into Chin
 - **Personalized study paths:** Enter prior knowledge, learning goals, days and daily available minutes under “个性化学习规划”. The model schedules study, revision and self checks using actual course segment IDs and PDF page references. Code checks coverage and assigns the requested time budget. View the plan online or download Markdown/JSON; the source course remains unabridged.
 - **Two dynamic presentation paths:** Quantitative content can use Manim for computed figures and processes. Humanities scene dramas plan characters, locations and shots, then call image or video services. Results identify the medium actually produced. Manim constructions require computation and rendering checks; scene dramas require a configured media service. PPT slides contain static keyframes and motion is delivered in a separate MP4.
 
-The English product name is **LivelyClass** and the Chinese name is **绘声绘课**. **Bring knowledge to life, bring the classroom alive.** Internal Python packages, configuration variables and existing data paths retain compatible names. See the [four-feature implementation review](docs/四项功能核对.md) for code locations.
+The full project name is **Lively Class——AI教育Agent** (AI Education Agent), shortened to **Lively Class**. **Bring knowledge to life, bring the classroom alive.** Internal Python packages, configuration variables and existing data paths retain compatible names. See the [four-feature implementation review](docs/四项功能核对.md) for code locations.
 
 Subject names and template routing serve different purposes. Formulae, geometry and computed mechanisms use STEM layouts; entity relations, table structures and system dependencies use professional structure layouts, even when the academic field also belongs to STEM. For media integration, Seedream image models draw scenes and characters, while Seedance video models generate motion clips. The Volcengine Ark base URL is `https://ark.cn-beijing.volces.com/api/v3`; enter the image/video model IDs enabled in your account and their credentials separately. See [subject routing and drama integration tests](docs/学科选版与漫剧接入测试.md) for configuration and test steps.
 

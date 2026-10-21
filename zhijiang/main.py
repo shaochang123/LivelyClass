@@ -183,7 +183,7 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
             finally:
                 runner.shutdown()
 
-    application = FastAPI(title="绘声绘课 LivelyClass", version="0.1.0", lifespan=lifespan)
+    application = FastAPI(title="Lively Class——AI教育Agent", version="0.1.0", lifespan=lifespan)
     from fastapi.exceptions import RequestValidationError
     from fastapi.exception_handlers import request_validation_exception_handler
     from fastapi.responses import JSONResponse

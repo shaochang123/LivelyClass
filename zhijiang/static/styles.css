@@ -1,4 +1,4 @@
-/* LivelyClass light technology design system. */
+/* Lively Class light technology design system. */
 :root {
   color-scheme: light;
   --bg:#f7f9fd; --panel:#fff; --panel2:#f1f5fc; --line:#dde5f0;
@@ -20,7 +20,7 @@ button:disabled{cursor:wait;opacity:.62}:focus-visible{outline:3px solid var(--b
 .site-header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #edf0f6}
 .header-inner{display:flex;min-height:80px;align-items:center;justify-content:space-between;gap:24px}
 .brand{display:flex;align-items:center;gap:12px;color:#183864;text-decoration:none;font-size:23px;font-weight:750;letter-spacing:-.5px;white-space:nowrap}
-.brand strong{margin-left:5px;color:#63718a;font-size:17px;font-weight:500;letter-spacing:1px}
+.brand-name{display:flex;flex-direction:column;line-height:1.25}.brand strong{margin-left:0;color:#63718a;font-size:13px;font-weight:500;letter-spacing:0}
 .brand-icon{display:grid;place-items:center;width:40px;height:40px;background:var(--brand);color:#fff;border-radius:9px;font-size:24px}
 .primary-nav{display:flex;align-items:center;gap:36px}.primary-nav a{position:relative;color:#43526c;font-size:15px;text-decoration:none;padding:26px 0}
 .primary-nav a::after{position:absolute;content:"";height:2px;background:var(--brand);bottom:15px;left:50%;right:50%;transition:left .18s,right .18s}

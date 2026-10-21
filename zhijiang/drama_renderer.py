@@ -64,7 +64,7 @@ def render_drama_deck(lesson, output, *, audio_files=None):
     deck = Presentation()
     deck.slide_width, deck.slide_height = Inches(PAGE_W), Inches(PAGE_H)
     deck.core_properties.title = lesson.title
-    deck.core_properties.subject = 'LivelyClass 场景漫剧 · 教材原文旁白'
+    deck.core_properties.subject = 'Lively Class——AI教育Agent · 场景漫剧 · 教材原文旁白'
     pages, segments = [], []
     for index, (segment, audio) in enumerate(zip(lesson.segments, audio_files), 1):
         entry = story['segments'].get(str(index), {})
