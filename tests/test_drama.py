@@ -261,9 +261,9 @@ def test_full_source_drama_pipeline_orders_planning_art_voice_and_export(tmp_pat
     result=store.get(job['id']);assert result['status']=='completed',result['error']
     folder=store.jobs_dir/job['id'];item=store.lesson(job['id'])
     source=''.join(s.narration for s in item.segments)
-    cues=json.loads((folder/'subtitles.json').read_text())['cues']
+    cues=json.loads((folder/'subtitles.json').read_text(encoding='utf8'))['cues']
     assert ''.join(speech.inputs)==source==''.join(c['text'] for c in cues)
     assert item.deck_plan['drama_production']['status']=='complete'
     assert len(calls)==sum(len(e['shots']) for e in item.deck_plan['comic_story']['segments'].values())
     assert (folder/'lesson.pptx').is_file() and (folder/'lesson.mp4').is_file()
-    assert json.loads((folder/'source-coverage.json').read_text())['verified']
+    assert json.loads((folder/'source-coverage.json').read_text(encoding='utf8'))['verified']

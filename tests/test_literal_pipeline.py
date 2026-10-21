@@ -39,11 +39,11 @@ def test_source_pipeline_exports_real_static_ppt_video_and_exact_subtitles(tmp_p
     processor.process(job['id']);result=store.get(job['id'])
     assert result['status']=='completed',result['error']
     folder=store.jobs_dir/job['id'];lesson=store.lesson(job['id'])
-    parsed=json.loads((folder/'parsed-source.json').read_text())['data']
+    parsed=json.loads((folder/'parsed-source.json').read_text(encoding='utf8'))['data']
     source=''.join(p['text'] for p in parsed['pages'])
-    cues=json.loads((folder/'subtitles.json').read_text())['cues']
+    cues=json.loads((folder/'subtitles.json').read_text(encoding='utf8'))['cues']
     assert ''.join(speech.inputs)==source==''.join(c['text'] for c in cues)
-    assert json.loads((folder/'source-coverage.json').read_text())['verified']
+    assert json.loads((folder/'source-coverage.json').read_text(encoding='utf8'))['verified']
     assert (folder/'subtitles.srt').is_file() and (folder/'subtitles.vtt').is_file()
     with zipfile.ZipFile(folder/'lesson.pptx') as z:
         assert not any(n.startswith('ppt/media/') and n.endswith(('.mp4','.wav','.mp3')) for n in z.namelist())
@@ -83,7 +83,7 @@ def test_generated_drawing_and_video_reach_real_courseware_and_frames(tmp_path,c
     paths,_=synthesize_source(lesson,SourceSpeech(),tmp_path,lambda *a:None)
     render_template_presentation(lesson,tmp_path/'lesson.pptx',audio_files=paths)
     render_shared_video(lesson,paths,tmp_path/'lesson.mp4')
-    manifest=json.loads((tmp_path/'presentation-preview/manifest.json').read_text())
+    manifest=json.loads((tmp_path/'presentation-preview/manifest.json').read_text(encoding='utf8'))
     assert any(p['kind']==('drama_shot' if comic else 'generated_illustration') for p in manifest['pages'])
     segment=manifest['segments'][0]
     if comic:

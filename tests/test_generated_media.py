@@ -25,7 +25,7 @@ def test_drawing_adapter_generates_valid_image_caches_and_hides_key(tmp_path):
     assert len(calls)==1 and calls[0].headers['authorization']=='Bearer secret-test'
     assert one==two
     assert Image.open(tmp_path/one['poster']).size==(320,180)
-    assert all('secret-test' not in p.read_text() for p in tmp_path.glob('*.json'))
+    assert all('secret-test' not in p.read_text(encoding='utf8') for p in tmp_path.glob('*.json'))
     (tmp_path/one['poster']).write_bytes(b'corrupt')
     with pytest.raises(GenerationError,match='损坏'):
         generate_asset(service,'Draw an original teacher.',tmp_path,'image')
@@ -39,7 +39,7 @@ def test_paid_request_unknown_outcome_is_never_automatically_resubmitted(tmp_pat
         with pytest.raises(GenerationError):generate_asset(service,'scene',tmp_path,'image',client=client)
         with pytest.raises(GenerationError,match='不会自动重复'):generate_asset(service,'scene',tmp_path,'image',client=client)
     assert len(calls)==1
-    assert 'secret should not leak' not in next(tmp_path.glob('*.json')).read_text()
+    assert 'secret should not leak' not in next(tmp_path.glob('*.json')).read_text(encoding='utf8')
 
 
 def test_seedance_real_media_decode_and_no_key_on_download(tmp_path):
@@ -89,7 +89,7 @@ def test_jimeng_api_key_submit_poll_and_cache_without_expansion(tmp_path):
         one=generate_asset(service,'原创动漫图书馆场景。',tmp_path,'image',client=client)
         assert generate_asset(service,'原创动漫图书馆场景。',tmp_path,'image',client=client)==one
     assert len(calls)==2 and one['task_id']=='test-1'
-    assert all('secret-test' not in p.read_text() for p in tmp_path.glob('*.json'))
+    assert all('secret-test' not in p.read_text(encoding='utf8') for p in tmp_path.glob('*.json'))
 
 
 def test_jimeng_query_failure_resumes_existing_task_without_second_submission(tmp_path):
@@ -105,7 +105,7 @@ def test_jimeng_query_failure_resumes_existing_task_without_second_submission(tm
     service=ArtServiceOptions(protocol='jimeng',base_url='https://openapi.cv.volces.com',model='jimeng_t2i_v30')
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(GenerationError):generate_asset(service,'scene',tmp_path,'image',client=client)
-        saved=json.loads(next(tmp_path.glob('*.json')).read_text())
+        saved=json.loads(next(tmp_path.glob('*.json')).read_text(encoding='utf8'))
         assert saved['status']=='submitted' and saved['task_id']=='test-2'
         assert generate_asset(service,'scene',tmp_path,'image',client=client)['status']=='complete'
     assert len(creates)==1 and len(queries)==2
@@ -123,9 +123,9 @@ def test_jimeng_denied_submission_keeps_code_and_does_not_repeat(tmp_path):
             generate_asset(service,'scene',tmp_path,'image',client=client)
         with pytest.raises(GenerationError,match='不会自动重复'):
             generate_asset(service,'scene',tmp_path,'image',client=client)
-    saved=json.loads(next(tmp_path.glob('*.json')).read_text())
+    saved=json.loads(next(tmp_path.glob('*.json')).read_text(encoding='utf8'))
     assert saved['provider_code']==50400 and saved['request_id']=='request-123'
-    assert 'secret-test' not in next(tmp_path.glob('*.json')).read_text()
+    assert 'secret-test' not in next(tmp_path.glob('*.json')).read_text(encoding='utf8')
     assert len(calls)==1
 
 
