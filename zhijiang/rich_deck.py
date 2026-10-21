@@ -164,9 +164,13 @@ def asset_caption(asset):
 
 
 def render_shared_deck(lesson, output, *, audio_files=None):
+    if lesson.deck_plan.get('comic_story'):
+        from zhijiang.comic_renderer import render_comic_deck
+        return render_comic_deck(lesson,output,audio_files=audio_files)
     import resvg_py
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    template = get_template(lesson.ppt_template); plan = lesson.deck_plan
+    from zhijiang.course_styles import effective_template
+    template = effective_template(lesson); plan = lesson.deck_plan
     story=plan.get('visual_story',{})
     navigation=story.get('navigation')
     if navigation:
@@ -205,6 +209,7 @@ def render_shared_deck(lesson, output, *, audio_files=None):
     deck.core_properties.comments = plan.get('planner','')+'；素材仅用于教学配图。'
     pages, segments, svgs = [], [], {}
     left = 1.3 if template.id == 'editorial' else .8
+    if template.subject_family!='general':left=template.boxes['wide'][0]
     def new(kind, segment_id=None):
         page = Page(deck, template, previews, len(deck.slides)+1)
         page.export_svg = True
@@ -284,6 +289,8 @@ def render_shared_deck(lesson, output, *, audio_files=None):
         captions = [segment.bullets[i-1] for i in choice.bullet_ids]
         probe_height = len(wrap_lines(segment.title,PAGE_W-left-.75,template.title_size))*round(template.title_size*96/72)*1.25/96+.12
         body_y=max(1.6,.38+probe_height+.2); body_h=6.8-body_y
+        if template.subject_family!='general':
+            body_y=max(body_y,template.boxes['wide'][1]);body_h=min(6.8-body_y,template.boxes['wide'][3])
         refs=choice.asset_refs
         story_visual=story.get('visuals',{}).get(str(index),{}).get('visual') if not computed else None
         source_figure=plan.get('source_figures',{}).get(str(index)) if not computed else None
@@ -318,6 +325,14 @@ def render_shared_deck(lesson, output, *, audio_files=None):
         if exhibit_entry and not exhibit and story_visual:
             from zhijiang.exhibit_svg import legacy_exhibit
             exhibit=legacy_exhibit(story_visual,refs,segment.narration);exhibit_fallback=True
+        literal_split=bool(plan.get('narration_mode')=='source_verbatim' and story_visual and
+            choice.layout in {'split','evidence'} and not source_figure)
+        if literal_split:
+            needed=sum(len(wrap_lines(text,3.5,24))*40/96+.23 for text in captions)
+            if needed>body_h-.2:
+                literal_split=False
+                plan.setdefault('layout_adjustments',[]).append({'segment_id':index,
+                    'requested':choice.layout,'rendered':'wide','reason':'measured_summary_height'})
         semantic=bool(choice.visual_groups) and not computed and not story_visual and not exhibit
         specs=[]
         exhibit_parts=None;story_parts=None;full_exhibit=exhibit
@@ -329,6 +344,7 @@ def render_shared_deck(lesson, output, *, audio_files=None):
             from zhijiang.story_svg import visual_pages
             bindings=story_illustration_bindings(story_visual,refs,segment.narration)
             story_width=PAGE_W-left-.75-(1.4 if story_visual['representation']=='table' and bindings else 0)
+            if literal_split:story_width-=4.1
             if source_figure and not separate_figure:story_width*=.48
             story_parts=visual_pages(story_visual,template,round(story_width*96),round((body_h-.1)*96),
                                      art_slots=bindings)
@@ -433,6 +449,10 @@ def render_shared_deck(lesson, output, *, audio_files=None):
                     # float in the title bar or replace the main teaching graph.
                     record_art=story_visual['representation']=='table' and bool(bindings)
                     width=PAGE_W-left-.75-(1.4 if record_art else 0)
+                    if literal_split:
+                        content_left=left+4.1;width-=4.1
+                        lines=['\n'.join(wrap_lines(text,3.5,24)) for text in captions]
+                        write_captions(page,lines,left,body_y,3.65,len(lines),size=24)
                     if source_figure and not separate_figure:width*=.48
                     box=(content_left,body_y,width,body_h-.1)
                     svg,node_boxes=visual_svg(story_visual,template,round(width*96),round(box[3]*96),
@@ -560,6 +580,19 @@ def render_shared_deck(lesson, output, *, audio_files=None):
                     compose(state,reveal)
                     state_path=previews/f'page-{page.number:03d}-reveal-{reveal}.png'
                     state.preview.save(state_path); states.append(state_path)
+        generated_windows=[]
+        for item in plan.get('generated_media',{}).get(str(index),[]):
+            poster=(root/item['file']).resolve()
+            if not poster.is_relative_to(root.resolve()) or not poster.is_file():
+                raise PresentationError('生成插画文件不在任务目录或尚未生成。')
+            art_page=new('generated_illustration',index);y=header(art_page,segment.title)
+            box=(left,y,PAGE_W-left-.75,6.55-y)
+            picture(art_page,poster,box)
+            art_page.text('AI原创教学插画 · 非教材原图',(left,6.63,10.8,.35),size=14,min_size=14)
+            notes(art_page,segment,choice);art_page.save_preview();body_numbers.append(art_page.number)
+            states.append(previews/f'page-{art_page.number:03d}.png')
+            generated_windows.append({'state':len(states)-1,'box':[v*96 for v in box],**item})
+        if generated_windows:state_fractions=[]
         clip=media/f'segment-{index:03d}.mp4'; audio=Path(audio_files[index-1])
         duration=None
         if computed:
@@ -576,9 +609,23 @@ def render_shared_deck(lesson, output, *, audio_files=None):
         elif choice.include_animation:
             # Legacy direct export can have no narration. New jobs always do.
             _render_animation(segment,index,len(lesson.segments),clip,media/f'poster-{index}.png')
+        if generated_windows and clip.is_file() and duration:
+            from zhijiang.page_media import overlay_generated_window
+            for n,item in enumerate(generated_windows):
+                # Computed scenes retain their source audio once; additional
+                # art occupies its own final window in the same recording.
+                if not computed and not item.get('video'):continue
+                target=media/f'art-overlay-{index}-{n}.mp4'
+                source=root/item.get('video',item['file'])
+                if not source.resolve().is_relative_to(root.resolve()):raise PresentationError('媒体路径越界。')
+                overlay_generated_window(clip,source,item['box'],target,
+                    duration*item['state']/len(states),duration*(item['state']+1)/len(states),duration,
+                    still=not bool(item.get('video')))
+                os.replace(target,clip)
         if clip.is_file():
             segments.append({'segment_id':index,'pages':body_numbers,'clip':clip.relative_to(root).as_posix(),
-                             'duration':duration,'asset_ids':[r.asset_id for r in refs]})
+                             'duration':duration,'asset_ids':[r.asset_id for r in refs],
+                             'generated_media':generated_windows})
         # Clips belong to the separate narrated MP4. The deck contains static
         # editable diagrams, illustration images and speaker notes only.
     if navigation:

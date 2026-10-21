@@ -25,7 +25,7 @@ from reportlab.platypus.tableofcontents import TableOfContents
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / "docs" / "产品说明书.md"
-DEFAULT_OUTPUT = ROOT / "output" / "pdf" / "智讲Agent_产品说明与使用指南.pdf"
+DEFAULT_OUTPUT = ROOT / "output" / "pdf" / "LivelyClass_绘声绘课_产品说明与使用指南.pdf"
 PAGE_WIDTH, PAGE_HEIGHT = A4
 CONTENT_WIDTH = PAGE_WIDTH - 100
 
@@ -178,7 +178,7 @@ def export_pdf(source: Path, target: Path, font_path: Path | None = None) -> Non
         canvas.saveState()
         canvas.setFont(font, 8)
         canvas.setFillColor(colors.HexColor("#58757A"))
-        canvas.drawString(50, PAGE_HEIGHT - 35, "智讲 Agent / Book2Course")
+        canvas.drawString(50, PAGE_HEIGHT - 35, "绘声绘课 / LivelyClass")
         canvas.drawRightString(PAGE_WIDTH - 50, 30, f"第 {document.page} 页")
         canvas.setStrokeColor(colors.HexColor("#CCDCD7"))
         canvas.line(50, PAGE_HEIGHT - 43, PAGE_WIDTH - 50, PAGE_HEIGHT - 43)
@@ -186,7 +186,7 @@ def export_pdf(source: Path, target: Path, font_path: Path | None = None) -> Non
 
     target.parent.mkdir(parents=True, exist_ok=True)
     document = GuideDocument(str(target), pagesize=A4, leftMargin=50, rightMargin=50,
-                             topMargin=62, bottomMargin=50, title=title, author="Book2Course")
+                             topMargin=62, bottomMargin=50, title=title, author="LivelyClass")
     document.multiBuild(story, onFirstPage=decorate, onLaterPages=decorate)
 
 

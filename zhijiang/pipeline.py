@@ -134,7 +134,7 @@ class JobProcessor:
             if isinstance(agents, AIAgents) and isinstance(agents.client, OllamaClient):
                 agents.client.progress = model_progress
                 agents.client.prefer_json=options.animation_mode=='geometry'
-            if mode==Mode.AI and options.animation_mode=='geometry':
+            if mode==Mode.AI and options.animation_mode=='geometry' and options.narration_mode!='source_verbatim':
                 from zhijiang.math_sources import read_math_pdf
                 from zhijiang.mathematical_planning import plan_constructed_lesson
                 document=checkpoint(folder/'parsed-source.json',
@@ -147,6 +147,23 @@ class JobProcessor:
                     lambda:read_pdf(source_bytes,job['filename'], cache_dir=folder/'parsed-pages',
                         progress=lambda done,total,label:progress(
                             f'解析 PDF（{done}/{total} 页）：{label}', 8 + done * 13 // total)))
+            if options.narration_mode=='source_verbatim':
+                from zhijiang.literal_pipeline import run_literal_job
+                def source_auxiliary(name):
+                    if not name or name==options.model or mode!=Mode.AI:return None
+                    if options.provider=='ollama':
+                        return OllamaClient(options.base_url,name,semantic_thinking=options.semantic_thinking,
+                            prefer_json=True,progress=model_progress,num_gpu=self.settings.ollama_num_gpu,
+                            thinking_level=self.settings.ollama_thinking_level,context_tokens=self.settings.ollama_context_tokens)
+                    return OpenAICompatibleClient(options.base_url,options.api_key,name)
+                math_planner=source_auxiliary(options.math_model)
+                math_reviewer=source_auxiliary(options.review_model)
+                speech=self._speech(voice_mode,self.store.get_speech_options(job_id))
+                lesson=run_literal_job(self,document,agents,options,voice_mode,speech,folder,progress,job_id,
+                    planning_client=math_planner,review_client=math_reviewer)
+                self.store.save_lesson(job_id,lesson)
+                self.store.complete(job_id)
+                return
             # Special-purpose templates are opt-in. A mixed textbook must keep
             # all extracted topics and choose an expression for each of them.
             use_math = mode == Mode.AI and options.animation_mode == "math" and supports_math(document)
@@ -260,6 +277,12 @@ class JobProcessor:
                 progress('保留具体示例、选择图解与讲解动作', 71)
                 enrich_teaching_exhibits(lesson, agents.client if isinstance(agents,AIAgents) else None,
                                     folder=folder/'teaching-exhibits',use_illustrations=options.use_illustrations)
+            from zhijiang.course_styles import build_course_style
+            if options.style_mode != 'template':
+                progress('根据教材内容设计课程视觉风格',72)
+            build_course_style(lesson,options.style_mode,
+                agents.client if isinstance(agents,AIAgents) else None,
+                folder/'course-style',prompt=options.prompt)
             (folder/'presentation-plan.json').write_text(
                 json.dumps(lesson.deck_plan,ensure_ascii=False,indent=2),encoding='utf-8')
             self.store.save_lesson(job_id, lesson)
@@ -323,6 +346,16 @@ class JobProcessor:
                     job_id, f"合成配音（{index + 1}/{len(lesson.segments)}）",
                     73 + (index + 1) * 14 // len(lesson.segments),
                 )
+            if options.style_mode == 'comic':
+                from zhijiang.course_styles import plan_comic_story
+                self.store.set_progress(job_id,'编排漫剧场景、行动与镜头',87)
+                plan_comic_story(lesson,agents.client,folder/'course-style')
+                from zhijiang.generated_media import enrich_generated_media
+                enrich_generated_media(lesson,options.art,folder,
+                    lambda message,percent:self.store.set_progress(job_id,message,percent))
+                self.store.save_lesson(job_id,lesson)
+                (folder/'presentation-plan.json').write_text(
+                    json.dumps(lesson.deck_plan,ensure_ascii=False,indent=2),encoding='utf-8')
             self.store.set_progress(job_id, "制作共享教学画面与 PPT", 88)
             self.presentation_renderer(lesson, folder / "lesson.pptx")
             self.store.set_progress(job_id, "合成同模板完整视频", 94)

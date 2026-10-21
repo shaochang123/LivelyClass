@@ -1,10 +1,39 @@
-# CourseForge
+# LivelyClass 绘声绘课
 
 **Language / 语言:** [简体中文](README.md) | [English](README.en.md)
 
 Convert textbooks, notes and knowledge PDFs you have permission to use into Chinese teaching videos and PPTX courseware with source references. The pipeline supports text extraction, local OCR, course planning, scripts, SVG diagrams, speech and video assembly. The website shows scripts, PDF pages, quotations and knowledge relations, with MP4, PPTX and scene data downloads.
 
 **Real AI mode** uses local Ollama or a compatible service. **Deterministic demo mode** needs no model or key and is explicitly labelled as rule-generated. Source matching, model review and computation checks have limited scopes; teaching content still needs human review.
+
+## Four core capabilities
+
+- **Source reading:** The new website copies all extracted textbook text into subtitle and speech inputs without knowledge selection. Page IDs, character ranges and hashes support checks for omissions, repetition, reordering and rewriting. Slides may summarize. Scanned pages remain dependent on OCR quality.
+- **Automatic direction:** Thirteen templates cover STEM, humanities and professional families. A local model identifies the subject from source content, then selects the template, layout and diagrams or animation. STEM uses figures and computational scenes; humanities uses scene dramas. The website requires no manual presentation, template or animation selection.
+- **Personalized study paths:** Enter prior knowledge, learning goals, days and daily available minutes under “个性化学习规划”. The model schedules study, revision and self checks using actual course segment IDs and PDF page references. Code checks coverage and assigns the requested time budget. View the plan online or download Markdown/JSON; the source course remains unabridged.
+- **Two dynamic presentation paths:** Quantitative content can use Manim for computed figures and processes. Humanities scene dramas plan characters, locations and shots, then call image or video services. Results identify the medium actually produced. Manim constructions require computation and rendering checks; scene dramas require a configured media service. PPT slides contain static keyframes and motion is delivered in a separate MP4.
+
+The English product name is **LivelyClass** and the Chinese name is **绘声绘课**. **Bring knowledge to life, bring the classroom alive.** Internal Python packages, configuration variables and existing data paths retain compatible names. See the [four-feature implementation review](docs/四项功能核对.md) for code locations.
+
+Subject names and template routing serve different purposes. Formulae, geometry and computed mechanisms use STEM layouts; entity relations, table structures and system dependencies use professional structure layouts, even when the academic field also belongs to STEM. For media integration, Seedream image models draw scenes and characters, while Seedance video models generate motion clips. The Volcengine Ark base URL is `https://ark.cn-beijing.volces.com/api/v3`; enter the image/video model IDs enabled in your account and their credentials separately. See [subject routing and drama integration tests](docs/学科选版与漫剧接入测试.md) for configuration and test steps.
+
+The responsive website uses a light technology theme: white navigation, a blue-violet hero, blue action buttons and an open workspace. Navigation links lead directly to the course workspace, automatic direction and generation workflow on desktop and mobile.
+
+Hard-refresh the browser after UI updates. Restart an already running Python service to load updated template display names. See the [interface visual guidelines](docs/界面视觉规范.md).
+
+### Adaptive styling and Comic lessons
+
+Upload a textbook in real AI mode. The model identifies its subject, chooses the style and layout, then plans each segment as a relationship diagram, computational figure or drawn scene. Describe audience, detail or art preferences in the PPT instructions. Website creation and retries always use automatic direction, without restoring manual template or animation settings from old jobs. Adaptive palettes follow course content; the application checks readability and retains necessary color adjustments.
+
+Humanities uses scene dramas. The model defines the world, character appearance and wardrobe, and locations, then plans establishing views, character actions and details in source order. The complete textbook text remains narration and subtitles, without assigning it to a fixed teacher/student dialogue. Each shot uses an actual image or video service asset. PPT contains scene keyframes and complete speaker notes; MP4 uses the original narration once. Image-only services produce illustrated sequences; video services supply moving clips. Stills are not labelled as character animation. Existing dialogue jobs retain their original records.
+
+The API retains `style_mode=subject|template|adaptive|comic` and existing animation parameters for compatibility. AI jobs created or retried through the website always submit `narration_mode=source_verbatim`, `style_mode=subject` and `animation_mode=auto`; deterministic demo mode uses basic illustrated pages. Classification and template selection are separate model calls, followed by per-segment visual tool planning. Legacy clients omitting the new parameters retain the explanatory workflow. Source-course understanding and planning allow only local or the authorized academy-server models, excluding DeepSeek and cloud language-model inference.
+
+Source courses export burned-in subtitles, SRT, VTT, exact-text JSON, a transcript and per-page coverage records. Subtitle timings use actual utterance durations. The full slide is scaled above a separate subtitle band. PPT contains no embedded audio/video; each segment's source speech occurs once in MP4. Continuous STEM scenes retain construction and calculation checks; incomplete scenes retain SVG and explicit records.
+
+Image/video services are disabled by default. Scene dramas require an Images-compatible gateway or the Seedance task protocol; video takes priority when both are enabled. The asset limit defaults to 12, up to 200 per course. If the shot count exceeds it, generation stops before asset requests and asks for an adjustment, without increasing the limit or inserting dialogue characters. Only scene briefs are transmitted with explicit consent; exported assets are labelled as AI interpretations. Shared character and location descriptions guide continuity; reference-image conditioning is not implemented, so visual continuity requires review. Media keys stay in task memory, outside SQLite, files and browser storage. Services such as Xiaoyunque need a compatible gateway. See [source reading and subject routing](docs/原文课程与学科编排.md) and [adaptive styling and comic lessons](docs/学科风格与漫剧.md).
+
+Jimeng text-to-image 3.0 has a direct **Jimeng (API Key)** option: use `https://openapi.cv.volces.com`, model/req_key `jimeng_t2i_v30`, and the API Key Secret. This Bearer endpoint differs from the AK/SK-signed `visual.volcengineapi.com` endpoint. Submitted task IDs are retained; query retries do not create another task. Prompts over 800 characters stop before asset requests instead of being truncated, and server-side prompt expansion is disabled. Drama planning reviews each shot against the source meaning, character and prop identities, and event order. Rejected drafts receive bounded revisions and retain the first record. Actual artwork still requires inspection beyond model review.
 
 ## Quick start (Windows)
 
@@ -20,7 +49,7 @@ Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/), select the [original samp
 
 Python 3.11+ is required; Python 3.13 has been verified. System narration requires Windows Chinese speech; other environments can use a compatible speech API. `imageio-ffmpeg` supplies FFmpeg, so a system installation is unnecessary.
 
-The website focuses on uploads, slide style, voice audition and generated results, with larger body text and concise labels. Model, speech and animation settings are collapsed by default; unconfigured model or speech settings open automatically, as do panels containing invalid inputs. Generation warnings and technical information are available under “生成记录” (generation records); each script segment has expandable “原文依据” (source evidence).
+The website focuses on uploads, automatic direction, voice audition and generated results, with larger body text and concise labels. Model, speech and media-service settings are collapsed by default; unconfigured model or speech settings open automatically, as do panels containing invalid inputs. Generation warnings and technical information are available under “生成记录” (generation records); each script segment has expandable “原文依据” (source evidence).
 
 ## Model and animation configuration
 
@@ -75,13 +104,15 @@ Start speech with `.\scripts\start_voice_service.ps1`; stop it with `Ctrl+C` in 
 
 ## PPT templates and course director
 
-The website offers **Dark Presentation, Paper Explainer, Academic Classroom, and Editorial Story**, plus **Newtouch-inspired Cloud Gradient, Technology Blue, Corporate White, and Deep Blue Launch**, with layout previews. The new corporate styles use original procedural gradients, orbits, dots and whitespace inspired by the supplied website screenshots and work across textbook subjects. Template instructions guide AI planning; PPT and video share their backgrounds, headings and diagrams. Real AI selects allowed layouts, existing bullet IDs and static teaching steps; demo mode is explicitly rule-based. Complex mathematical figures retain a large canvas and their existing continuous animation.
+The model automatically chooses styles and layouts from STEM, humanities, professional and general template families. Available designs include dark presentations, paper explainers, academic, editorial and technology themes. Template instructions guide AI planning; PPT and video share backgrounds, headings and diagrams. Real AI selects visual tools, permitted layouts and static teaching steps from the content, while demo mode uses rule-based layouts. Internal IDs remain compatible with old jobs; advanced API clients can still specify a template explicitly.
+
+Reciprocal relations use separate arrow lanes and label positions. Pale decorative colors are not used for low-contrast semantic text. Unconnected, empty boxes that duplicate edge labels are merged into those labels, retaining complete aliases and the model draft.
 
 Diagrams support concept ovals, operation boxes, data parallelograms, documents and results; decision diamonds represent actual conditional decisions, and comparison pages use open space. Narrow nodes and crowded content change composition or paginate while retaining objects, relations and conditions. Each narration plays once. Failed exports retain synthesized audio; retries reuse files only when narration, voice identity and audio hashes match. Switching model providers requires a matching endpoint and model. Endpoint and model settings are restored after refresh.
 
 Reproduce the file-format and feature matrix, real local-model runs and long-video probes using [generation stability and feature tests](docs/生成稳定性与功能测试.md). For ordinary jobs that failed during export, run `python scripts/resume_job_export.py YOUR_JOB_ID` to export the retained course with local speech without calling the language model again.
 
-New jobs export **a static PPT and a separate narrated MP4**, without embedded video or audio in the deck. They share templates, diagrams and illustrations. The deck shows static mathematical steps; the video shows continuous demonstrations, using each narration once. Relevant textbook illustrations or sentence images can be cited with crop and source information in notes. Complex connections and long annotations use the full teaching viewport; source figures receive a separate page when needed. Titles use approximately 36–44 pt and body text at least 24 pt. Existing generated files remain accessible; new exports use this behavior. New website jobs default to `paper`. See [course director and PPT templates](docs/课程导演与PPT模板.md).
+New jobs export **a static PPT and a separate narrated MP4**, without embedded video or audio in the deck. They share templates, diagrams and illustrations. The deck shows static mathematical steps; the video shows continuous demonstrations, using each narration once. Relevant textbook illustrations or sentence images can be cited with crop and source information in notes. Complex connections and long annotations use the full teaching viewport; source figures receive a separate page when needed. Titles use approximately 36–44 pt and body text at least 24 pt. Existing generated files remain accessible; new exports use this behavior. AI website jobs use the template selected from the subject classification; demo mode uses `paper`. See [course director and PPT templates](docs/课程导演与PPT模板.md).
 
 New jobs separate speech from screen content. Full narration stays in notes and on the website; compact object labels, example tables, comparisons, sourced arrows and concept diagrams take its place on screen. In strict mode, every shortened assertion and connector is bound to a complete script sentence and reviewed for conditions, negation and direction. Crowded diagrams change composition. Existing mathematical SVGs and continuous scenes retain priority.
 
@@ -226,6 +257,6 @@ See [four-level mathematics validation](docs/math-level-validation-2026-10.md) f
 - Each strict-mode qualitative scene uses one source page and may reselect an adjacent input page. Missing title requirements or explanations requiring joint evidence across pages fail explicitly. Scope and semantic reviews can still be wrong and do not guarantee factual correctness.
 - The website displays courses and sources but has no project list, knowledge selection/editor, script editor or human approval/publishing workflow.
 - PPTX is static courseware with editable titles and notes; SVG paths are not separate PowerPoint shapes. Narration and continuous animations belong to the separate full MP4.
-- Restricted 2-D scenes and source-relation tracing are supported. Complex 3-D mechanisms, cross-chapter reasoning, fact proofs, separate SRT/VTT subtitles and course ZIP export are not implemented.
+- Restricted 2-D scenes, source-relation tracing and source-course SRT/VTT exports are supported. Complex 3-D mechanisms, cross-chapter reasoning, fact proofs and course ZIP export are not implemented. Character coverage does not independently establish OCR or diagram semantics.
 
 Source code uses the [MIT License](LICENSE). Dependencies and textbooks have their own licenses; see [sources and licenses](docs/第三方来源与许可.md).

@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from zhijiang.presentation_templates import PPTTemplate
 
 
@@ -49,6 +49,40 @@ class Evidence(BaseModel):
     ocr: bool = False
 
 
+class LiteralEvidence(Evidence):
+    quote: str = Field(min_length=1, max_length=300)
+    literal: Literal[True]
+
+
+class SourceSpan(BaseModel):
+    page: int = Field(ge=1)
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    text: str = Field(min_length=1)
+    page_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class ArtServiceOptions(BaseModel):
+    protocol: Literal['disabled', 'images', 'jimeng', 'seedance'] = 'disabled'
+    base_url: str = Field(default='', max_length=500)
+    model: str = Field(default='', max_length=160)
+    api_key: str = Field(default='', exclude=True, repr=False)
+
+
+class ArtOptions(BaseModel):
+    image: ArtServiceOptions = Field(default_factory=ArtServiceOptions)
+    video: ArtServiceOptions = Field(default_factory=ArtServiceOptions)
+    max_assets: int = Field(default=12, ge=1, le=200)
+
+
+class LearnerProfile(BaseModel):
+    enabled: bool = False
+    background: str = Field(default='', max_length=1000)
+    goal: str = Field(default='', max_length=1000)
+    days: int = Field(default=3, ge=1, le=30)
+    minutes_per_day: int = Field(default=30, ge=5, le=240)
+
+
 class GenerationOptions(BaseModel):
     provider: Literal["ollama", "openai"] = "openai"
     base_url: str = ""
@@ -59,6 +93,10 @@ class GenerationOptions(BaseModel):
     prompt: str = Field(default="", max_length=4000)
     animation_mode: AnimationMode = "auto"
     ppt_template: PPTTemplate = 'classic'
+    style_mode: Literal['template', 'adaptive', 'comic', 'subject'] = 'template'
+    narration_mode: Literal['explanatory', 'source_verbatim'] = 'explanatory'
+    art: ArtOptions = Field(default_factory=ArtOptions)
+    learner: LearnerProfile = Field(default_factory=LearnerProfile)
     use_illustrations: bool = True
     semantic_thinking: bool = True
     content_checks: Literal['warn', 'strict'] = 'warn'
@@ -255,11 +293,20 @@ class VisualScenePlan(BaseModel):
 class LessonSegment(BaseModel):
     title: str = Field(min_length=2, max_length=80)
     kind: VisualKind
-    narration: str = Field(min_length=20)
+    narration: str = Field(min_length=1)
     bullets: list[str] = Field(min_length=1, max_length=4)
-    evidence: Evidence
+    evidence: Evidence | LiteralEvidence
+    source_spans: list[SourceSpan] = Field(default_factory=list)
     math_scene: MathScenePlan | None = None
     visual_scene: VisualScenePlan | None = None
+
+    @model_validator(mode='after')
+    def narration_contract(self):
+        if not self.source_spans and len(self.narration)<20:
+            raise ValueError('普通讲稿至少20字；短原文必须绑定来源字符区间。')
+        if self.source_spans and self.narration!=''.join(s.text for s in self.source_spans):
+            raise ValueError('原文配音不得改写、遗漏或添加来源文字。')
+        return self
 
 
 class Lesson(BaseModel):

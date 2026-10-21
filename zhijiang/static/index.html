@@ -3,34 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="智讲 Agent：从 PDF 到教学视频与 PPT 课件。">
-  <title>智讲 Agent · 从 PDF 到一节课</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=20261012-clean-ui">
+  <meta name="description" content="绘声绘课 LivelyClass：从 PDF 到教学视频与 PPT 课件。">
+  <title>绘声绘课 LivelyClass · 从 PDF 到一节课</title>
+  <link rel="icon" href="/static/favicon.svg?v=20261020" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=20261020-jimeng-v3">
   <style>[hidden]{display:none!important}</style>
-  <script src="/static/app.js?v=20261012-clean-ui" defer></script>
+  <script src="/static/app.js?v=20261020-jimeng-v3" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#workspace">跳到课程工作台</a>
   <div class="page-shell">
     <header class="site-header">
-      <a class="brand" href="/" aria-label="智讲 Agent 首页"><span class="brand-icon">讲</span><span>智讲 <strong>Agent</strong></span></a>
-      <span class="local-pill"><span class="pulse"></span>本地工作台</span>
+      <div class="header-inner">
+        <a class="brand" href="/" aria-label="绘声绘课 LivelyClass 首页"><span class="brand-icon">绘</span><span>LivelyClass <strong>绘声绘课</strong></span></a>
+        <nav class="primary-nav" aria-label="主导航"><a href="#workspace">课程工作台</a><a href="#course-style-options">自动编排</a><a href="#workflow">生成流程</a></nav>
+        <a class="local-pill" href="#workspace"><span class="pulse"></span>开始创作 <span aria-hidden="true">↗</span></a>
+      </div>
     </header>
     <main>
       <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-inner">
         <div class="hero-copy">
-          <h1 id="hero-title">让一份 PDF，<br><em>讲成一节课。</em></h1>
-          <p>上传教材，生成讲解视频与 PPT 课件。</p>
+          <p class="eyebrow">LIVELYCLASS · AI-Powered Learning &amp; Course Creation</p>
+          <h1 id="hero-title">从一份教材，<br><em>到一堂好课。</em></h1>
+          <p class="hero-description">让知识跃然眼前，让课堂生动起来。上传 PDF，<br class="desktop-break">生成讲解视频与 PPT 课件。</p>
+          <div class="hero-actions"><a class="hero-button" href="#workspace">开始生成 <span aria-hidden="true">→</span></a><a class="hero-link" href="#workflow">了解生成流程 <span aria-hidden="true">↗</span></a></div>
+          <div class="hero-points"><span>教材原文关联</span><span>个性化讲解</span><span>多风格呈现</span></div>
         </div>
         <div class="hero-visual" aria-hidden="true">
-          <div class="visual-corner"></div>
-          <div class="visual-doc"><span class="visual-label">PDF</span><div class="doc-line long"></div><div class="doc-line"></div><div class="doc-line short"></div><div class="doc-line"></div><div class="doc-line long"></div></div>
-          <div class="visual-arrow">→</div>
-          <div class="visual-video"><span class="visual-label">视频 + PPT</span><div class="play-ring">▶</div><div class="video-strip"><span></span><span></span><span></span></div></div>
+          <div class="visual-orbit orbit-one"></div><div class="visual-orbit orbit-two"></div>
+          <div class="visual-doc"><span class="document-tag">PDF</span><strong>你的学习资料</strong><div class="doc-line long"></div><div class="doc-line"></div><div class="doc-line short"></div><div class="doc-figure"><i></i><i></i><i></i><i></i></div><div class="doc-line long"></div></div>
+          <div class="visual-video"><div class="visual-toolbar"><span class="window-dots"><i></i><i></i><i></i></span><span>LivelyClass</span></div><div class="visual-lesson"><span class="lesson-label">让知识清晰可见</span><svg viewBox="0 0 310 130" xmlns="http://www.w3.org/2000/svg"><path d="M35 105H280M35 20V105" fill="none" stroke="#c4d1e7" stroke-width="1.5"/><path d="M43 91C95 91 87 40 143 47S205 92 272 24" fill="none" stroke="#2868ef" stroke-width="4"/><circle cx="143" cy="47" r="7" fill="#8955d9" stroke="white" stroke-width="3"/><path d="M143 47V105" stroke="#b5a0df" stroke-dasharray="4 4"/><rect x="187" y="7" width="68" height="23" rx="5" fill="#eee8fb"/><text x="221" y="23" text-anchor="middle" font-size="12" fill="#6f46b2">知识图示</text></svg></div><div class="visual-player"><span class="play-ring">▶</span><span class="player-track"><i></i></span><span>MP4 + PPTX</span></div></div>
+          <div class="visual-caption"><span class="caption-icon">✓</span><span>讲稿、图示与配音<br><strong>汇成一节完整课程</strong></span></div>
+        </div>
         </div>
       </section>
-      <section class="workspace" aria-labelledby="workspace-title">
-        <div class="section-heading"><h2 id="workspace-title">开始生成</h2></div>
+      <section id="workspace" class="workspace content-width" aria-labelledby="workspace-title">
+        <div class="section-heading"><div><p class="section-kicker">COURSE WORKSPACE</p><h2 id="workspace-title">开始你的课程创作</h2></div><p class="section-note">从教材出发，按你的方式讲解。</p></div>
         <div class="workspace-grid">
           <form id="upload-form" class="control-panel">
             <label class="field-title" for="pdf-file"><span class="step-number">01</span>学习资料</label>
@@ -41,9 +50,11 @@
               <input id="pdf-file" name="file" type="file" accept=".pdf,application/pdf" required>
             </div>
             <fieldset class="choice-group"><legend class="field-title"><span class="step-number">02</span>生成方式</legend>
-              <label class="choice-card"><input type="radio" name="mode" value="demo" checked><strong>确定性演示模式 · 规则生成</strong></label>
-              <label class="choice-card" id="ai-choice"><input type="radio" name="mode" value="ai"><strong>AI 生成</strong></label>
+              <label class="choice-card" id="ai-choice"><input type="radio" name="mode" value="ai" checked><strong>AI 生成 · 学科编排</strong></label>
+              <label class="choice-card"><input type="radio" name="mode" value="demo"><strong>确定性演示模式 · 规则生成</strong></label>
             </fieldset>
+            <input id="narration-mode" name="narration_mode" type="hidden" value="source_verbatim">
+            <p class="source-policy">字幕与配音逐字朗读教材原文，PPT提炼要点、绘制图示。扫描教材以识别文本为准，可下载全文与逐页核对记录。</p>
             <details id="ai-settings" class="settings-panel" hidden>
               <summary>模型设置 <span id="ai-ready-label"></span></summary>
               <div class="advanced-fields">
@@ -57,8 +68,8 @@
                 <input id="llm-api-key" name="llm_api_key" type="password" autocomplete="off" placeholder="本机 Ollama 可留空">
                 <div class="credential-controls"><label><input id="remember-llm-key" type="checkbox" checked>在本机记住密钥</label><button id="clear-llm-key" class="text-button" type="button" hidden>清除保存</button></div>
                 <span id="llm-key-state" class="credential-state" aria-live="polite"></span>
-                <label for="custom-prompt">讲解要求</label>
-                <textarea id="custom-prompt" name="custom_prompt" rows="3" maxlength="4000" placeholder="面向谁讲？重点讲什么？希望什么风格？"></textarea>
+                <label for="custom-prompt">PPT编排要求</label>
+                <textarea id="custom-prompt" name="custom_prompt" rows="3" maxlength="4000" placeholder="面向谁学习？PPT如何组织？希望什么画风？原文字幕与配音保持完整。"></textarea>
                 <details class="secondary-settings">
                   <summary>数学模型（可选）</summary>
                   <div class="settings-fields">
@@ -70,22 +81,44 @@
                 </details>
               </div>
             </details>
-            <div class="advanced-fields template-picker">
-              <h3>课件风格</h3>
-              <label class="sr-only" for="ppt-template">选择课件模板</label>
-              <select id="ppt-template" name="ppt_template">
-                <option value="paper" selected>纸上讲解</option><option value="academic">学术课堂</option><option value="editorial">杂志叙事</option><option value="classic">深色演示</option>
-              </select>
-              <img id="ppt-template-preview" src="/api/ppt-templates/paper/preview" alt="纸上讲解模板的版式示意" width="1280" height="720">
-              <label class="consent"><input id="use-illustrations" name="use_illustrations" type="checkbox" checked>自动配图</label>
+            <div id="course-style-options" class="advanced-fields template-picker">
+              <h3>自动编排</h3>
+              <p id="director-description" class="result-note">模型阅读教材后，自动识别学科，选择课件风格、页面布局以及图示或动画。你可以在“PPT编排要求”中描述希望达到的效果。</p>
+              <p class="result-note">文科采用场景漫剧，数理化按内容组织图形与推演；实际采用的方案会在生成结果中显示。原创绘图和视频服务可在下方接入。</p>
             </div>
-            <details class="settings-panel">
-              <summary>图示与动画设置</summary>
+            <details id="learner-settings" class="settings-panel">
+              <summary>个性化学习规划 <span>可选</span></summary>
               <div class="advanced-fields">
-                <label for="animation-mode">动画方式</label>
-                <select id="animation-mode" name="animation_mode"><option value="auto">自动选择</option><option value="visual">教学图示</option><option value="geometry">数学对象推演</option><option value="math">二维线性变换</option><option value="basic">基础图示</option></select>
-                <label for="content-checks">生成策略</label>
-                <select id="content-checks" name="content_checks"><option value="warn">直接生成（默认）</option><option value="strict">严格复核</option></select>
+                <label class="source-policy"><input id="learner-enabled" name="learner_enabled" type="checkbox"> 同时生成学习路径与自测建议</label>
+                <label for="learner-background">已有基础</label>
+                <textarea id="learner-background" name="learner_background" rows="2" maxlength="1000" placeholder="例如：已学过基础概念，希望巩固例题与推导。"></textarea>
+                <label for="learner-goal">学习目标</label>
+                <textarea id="learner-goal" name="learner_goal" rows="2" maxlength="1000" placeholder="例如：理解本节内容，并能独立复述知识关系。"></textarea>
+                <label for="learner-days">计划天数</label>
+                <input id="learner-days" name="learner_days" type="number" min="1" max="30" value="3">
+                <label for="learner-minutes">每天可用时间（分钟）</label>
+                <input id="learner-minutes" name="learner_minutes_per_day" type="number" min="5" max="240" value="30">
+                <p class="result-note">模型根据课程片段安排学习、复习与自测。学习计划单独输出，字幕与配音仍完整保留教材原文。</p>
+              </div>
+            </details>
+            <details id="art-settings" class="settings-panel">
+              <summary>原创插画与视频接口 <span>可选</span></summary>
+              <div class="advanced-fields">
+                <p class="result-note">场景漫剧需配置绘图或视频服务：先设定人物与地点，再逐镜绘制完整动漫场景。绘图接口输出插画分镜，视频接口输出动态片段；同时开启时漫剧优先使用视频。仅发送场景描述，小云雀等服务需兼容网关，视频支持Seedance任务协议。密钥仅用于本次任务。</p>
+                <p class="result-note">Seedream等图片模型用于绘制人物与场景，Seedance用于生成动态视频。火山方舟接口根地址可填 https://ark.cn-beijing.volces.com/api/v3，模型ID使用你已开通的图片或视频模型；两类模型分别填写，不要互换。</p>
+                <label for="image-protocol">绘图接口</label>
+                <select id="image-protocol" name="image_protocol"><option value="disabled">关闭</option><option value="images">Images兼容绘图接口（如Seedream）</option><option value="jimeng">即梦文生图（API Key）</option></select>
+                <p class="result-note">即梦3.0使用API Key入口 https://openapi.cv.volces.com，模型填 jimeng_t2i_v30，密钥填 API Key Secret；不填ID、不使用签名鉴权域名。单镜提示词超过800字符会在提交前提示调整。</p>
+                <label for="image-base-url">绘图API根地址</label><input id="image-base-url" name="image_base_url" type="url" placeholder="https://你的绘图网关/v1">
+                <label for="image-model">绘图模型ID</label><input id="image-model" name="image_model" maxlength="160" placeholder="服务提供的模型ID">
+                <label for="image-api-key">绘图密钥（不保存）</label><input id="image-api-key" name="image_api_key" type="password" autocomplete="off">
+                <label for="video-protocol">视频接口</label>
+                <select id="video-protocol" name="video_protocol"><option value="disabled">关闭</option><option value="seedance">Seedance异步任务接口</option></select>
+                <label for="video-base-url">视频API根地址</label><input id="video-base-url" name="video_base_url" type="url" placeholder="https://你的服务/api/v3">
+                <label for="video-model">视频模型/接入点ID</label><input id="video-model" name="video_model" maxlength="160" placeholder="服务提供的模型或接入点ID">
+                <label for="video-api-key">视频密钥（不保存）</label><input id="video-api-key" name="video_api_key" type="password" autocomplete="off">
+                <label for="art-max-assets">每课生成素材数上限</label><input id="art-max-assets" name="art_max_assets" type="number" min="1" max="200" value="12">
+                <p class="result-note">漫剧每镜对应一份素材。生成前会核对分镜总数，超过上限时提示调整，不会自动增加调用。</p>
               </div>
             </details>
             <fieldset class="choice-group"><legend class="field-title"><span class="step-number">03</span>讲解声音</legend>
@@ -115,45 +148,54 @@
             </section>
             <div class="consents">
               <label><input id="rights-confirmed" type="checkbox" required><span>我拥有这份资料的使用权</span></label>
-              <label id="remote-consent-row" hidden><input id="remote-consent" type="checkbox"><span>同意将教材与讲稿发送到所选模型或语音服务</span></label>
+              <label id="remote-consent-row" hidden><input id="remote-consent" type="checkbox"><span>同意将所需原文发送至所选学院模型或语音服务，并将场景绘制描述发送至已启用的外部媒体服务</span></label>
             </div>
             <button id="submit-button" class="primary-button" type="submit">生成一节课 <span aria-hidden="true">↗</span></button>
           </form>
-          <aside class="process-panel" aria-label="生成流程">
+          <aside id="workflow" class="process-panel" aria-label="生成流程">
+            <p class="panel-kicker">HOW IT WORKS</p>
             <h3>从教材到课程</h3>
+            <p class="process-intro">把内容组织与画面表达串联起来，<br>让每个知识点都有讲解的空间。</p>
             <ol class="timeline">
-              <li><span class="timeline-icon">01</span><strong>读懂教材</strong></li>
-              <li><span class="timeline-icon">02</span><strong>组织讲解</strong></li>
-              <li><span class="timeline-icon">03</span><strong>设计画面</strong></li>
-              <li><span class="timeline-icon">04</span><strong>生成视频与课件</strong></li>
+              <li><span class="timeline-icon">01</span><div><strong>解析学习资料</strong><p>提取文字，关联教材原文。</p></div></li>
+              <li><span class="timeline-icon">02</span><div><strong>识别学科与编排</strong><p>选择数理化、人文或专业模板。</p></div></li>
+              <li><span class="timeline-icon">03</span><div><strong>绘制教学画面</strong><p>数理推演与文科故事线分别组织。</p></div></li>
+              <li><span class="timeline-icon">04</span><div><strong>导出视频与课件</strong><p>配音与画面汇合，交付学习成果。</p></div></li>
             </ol>
+            <div class="process-foot"><span>你的课程成果</span><div><strong>MP4 视频</strong><strong>PPTX 课件</strong><strong>讲稿与来源</strong></div></div>
           </aside>
         </div>
       </section>
-      <section id="job-section" class="results" hidden aria-live="polite">
+      <section id="job-section" class="results content-width" hidden aria-live="polite">
         <div class="section-heading"><h2>生成结果</h2><div class="job-actions"><button id="retry-button" class="text-button" type="button" hidden>重新生成</button><button id="delete-button" class="text-button" type="button" hidden>删除任务</button></div></div>
         <div class="job-card"><div class="job-status-row"><span id="job-badge" class="status-badge">排队中</span><span id="job-filename" class="filename"></span></div><h3 id="job-stage">等待处理</h3><div class="progress-track"><div id="job-progress" class="progress-fill"></div></div><p id="job-message"></p></div>
         <div id="lesson-result" hidden>
           <div class="result-grid">
             <div class="video-card">
-              <div class="card-heading"><h3>教学视频</h3><a id="download-video" href="#" download="zhijiang-lesson.mp4">下载 MP4 ↗</a></div>
+              <div class="card-heading"><h3>教学视频</h3><a id="download-video" href="#" download="LivelyClass-lesson.mp4">下载 MP4 ↗</a></div>
               <video id="lesson-video" controls preload="metadata" playsinline></video>
               <p id="voice-note" class="result-note"></p>
-              <div id="presentation-export" class="presentation-export" hidden><strong>PPT 课件</strong><a id="download-presentation" href="#" download="zhijiang-lesson.pptx">下载 PPTX ↗</a></div>
+              <div id="presentation-export" class="presentation-export" hidden><strong>PPT 课件</strong><a id="download-presentation" href="#" download="LivelyClass-lesson.pptx">下载 PPTX ↗</a></div>
+              <div id="source-exports" class="presentation-export" hidden><strong>原文与字幕</strong><a id="download-subtitles" href="#">SRT字幕 ↗</a><a id="download-transcript" href="#">教材全文 ↗</a><a id="download-coverage" href="#">逐页核对 ↗</a></div>
             </div>
-            <div class="overview-card"><h3 id="lesson-title"></h3><p id="lesson-objective"></p><p id="ppt-template-result" class="result-note"></p><div class="overview-meta"><span id="segment-count"></span><span id="generation-mode"></span></div></div>
+            <div class="overview-card"><h3 id="lesson-title"></h3><p id="lesson-objective"></p><p id="ppt-template-result" class="result-note"></p><p id="source-route-result" class="result-note"></p><div class="overview-meta"><span id="segment-count"></span><span id="generation-mode"></span></div></div>
           </div>
           <details class="generation-records">
             <summary>生成记录</summary>
             <div id="lesson-notice"></div><div id="math-report" hidden></div>
             <a id="download-math-scenes" class="text-button" href="#" hidden>下载场景数据 ↗</a>
           </details>
+          <section id="learning-plan-result" class="overview-card" hidden>
+            <div class="card-heading"><h3>你的学习计划</h3><a id="download-learning-plan" href="#">下载学习计划 ↗</a></div>
+            <p id="learning-plan-overview"></p><p id="learning-plan-time" class="result-note"></p>
+            <div id="learning-plan-sessions"></div>
+          </section>
           <div class="script-heading"><h3>逐段讲稿与来源</h3></div>
           <div id="segments" class="segments"></div>
         </div>
       </section>
     </main>
-    <footer class="site-footer">智讲 Agent · Book2Course</footer>
+    <footer class="site-footer"><div class="footer-inner"><span>LivelyClass <strong>绘声绘课</strong></span><span>让知识跃然眼前，让课堂生动起来。</span><a href="#workspace">返回工作台 ↑</a></div></footer>
   </div>
 </body>
 </html>

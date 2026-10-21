@@ -262,7 +262,7 @@ def create_app(settings: VoiceSettings | None = None, *, engine_factory=QwenEngi
             timer.cancel()
         release()
 
-    application = FastAPI(title='智讲本机 Qwen3-TTS 参考声音服务', lifespan=lifespan)
+    application = FastAPI(title='绘声绘课 LivelyClass 本机 Qwen3-TTS 参考声音服务', lifespan=lifespan)
 
     def installed():
         return all((settings.model_dir / name).is_file() for name in

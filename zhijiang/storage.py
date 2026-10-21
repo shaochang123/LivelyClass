@@ -23,6 +23,7 @@ class JobStore:
         self.db_path = data_dir / "jobs.sqlite3"
         self._api_keys: dict[str, str] = {}
         self._tts_api_keys: dict[str, str] = {}
+        self._art_api_keys: dict[str, dict[str, str]] = {}
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -108,6 +109,8 @@ class JobStore:
             self._api_keys[job_id] = options.api_key
         if speech_options and speech_options.api_key:
             self._tts_api_keys[job_id] = speech_options.api_key
+        if options:
+            self.set_art_api_keys(job_id, options.art)
         return self.get(job_id)  # type: ignore[return-value]
 
     def get_options(self, job_id: str) -> GenerationOptions:
@@ -115,7 +118,12 @@ class JobStore:
             row = connection.execute("SELECT options_json FROM jobs WHERE id=?", (job_id,)).fetchone()
         options = GenerationOptions.model_validate_json(row["options_json"] if row else "{}")
         options.api_key = self._api_keys.get(job_id, "")
+        for kind in ('image', 'video'):
+            getattr(options.art, kind).api_key = self._art_api_keys.get(job_id, {}).get(kind, '')
         return options
+
+    def set_art_api_keys(self, job_id, art):
+        self._art_api_keys[job_id] = {kind: getattr(art, kind).api_key for kind in ('image', 'video')}
 
     def set_api_key(self, job_id: str, api_key: str) -> None:
         if api_key:
@@ -145,6 +153,7 @@ class JobStore:
     def clear_api_key(self, job_id: str) -> None:
         self._api_keys.pop(job_id, None)
         self._tts_api_keys.pop(job_id, None)
+        self._art_api_keys.pop(job_id, None)
 
     def get(self, job_id: str) -> dict | None:
         with self._connect() as connection:

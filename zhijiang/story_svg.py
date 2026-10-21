@@ -1,6 +1,7 @@
 """Program-controlled, editable SVG diagrams for reviewed compact slide stories."""
 from __future__ import annotations
 import html
+import re
 from PIL import Image, ImageDraw
 from zhijiang.presentation import _font, PresentationError
 
@@ -67,19 +68,23 @@ def node_shape(item, view):
     return 'process' if view == 'process' else 'concept'
 
 
-def outline_port(box, other, shape):
+def outline_port(box, other, shape, *, offset=(0.,0.)):
     """Intersect the center-to-center connector with the actual node outline."""
     import math
     x,y,w,h=box; ox,oy,ow,oh=other
-    cx,cy=x+w/2,y+h/2;dx,dy=ox+ow/2-cx,oy+oh/2-cy
+    mx,my=x+w/2,y+h/2;dx,dy=ox+ow/2-mx,oy+oh/2-my
+    cx,cy=mx+offset[0],my+offset[1]
     if not dx and not dy:return cx,cy
     if shape in {'concept','result'}:
-        scale=1/math.sqrt((dx/(w/2))**2+(dy/(h/2))**2)
-    elif shape=='decision':
-        scale=1/(abs(dx)/(w/2)+abs(dy)/(h/2))
-    elif shape=='data':
-        # Parallelogram side intersections, not its rectangular bounding box.
-        vertices=[(x+w*.12,y),(x+w,y),(x+w*.88,y+h),(x,y+h)]
+        a=(dx/(w/2))**2+(dy/(h/2))**2
+        b=2*((cx-mx)*dx/(w/2)**2+(cy-my)*dy/(h/2)**2)
+        c=((cx-mx)/(w/2))**2+((cy-my)/(h/2))**2-1
+        scale=(-b+math.sqrt(max(0,b*b-4*a*c)))/(2*a)
+    else:
+        if shape=='decision':vertices=[(mx,y),(x+w,my),(mx,y+h),(x,my)]
+        elif shape=='data':vertices=[(x+w*.12,y),(x+w,y),(x+w*.88,y+h),(x,y+h)]
+        elif shape=='document':vertices=[(x,y),(x+w-24,y),(x+w,y+24),(x+w,y+h),(x,y+h)]
+        else:vertices=[(x,y),(x+w,y),(x+w,y+h),(x,y+h)]
         hits=[]
         for (ax,ay),(bx,by) in zip(vertices,vertices[1:]+vertices[:1]):
             ex,ey=bx-ax,by-ay;den=dx*ey-dy*ex
@@ -88,20 +93,27 @@ def outline_port(box, other, shape):
             u=((ax-cx)*dy-(ay-cy)*dx)/den
             if t>=0 and 0<=u<=1:hits.append(t)
         scale=min(hits)
-    else:
-        scale=min((w/2)/abs(dx) if dx else float('inf'),
-                  (h/2)/abs(dy) if dy else float('inf'))
     return cx+dx*scale,cy+dy*scale
 
 
 def lines(text, width, size=32):
+    """Wrap at Latin word boundaries, retaining every visible character."""
     draw=ImageDraw.Draw(Image.new('RGB',(1,1)));font=_font(size)
     result=[];line=''
-    for c in text:
-        if c=='\n' or line and draw.textlength(line+c,font=font)>width:
-            result.append(line);line=''
-        if c!='\n':line+=c
-    if line:result.append(line)
+    tokens=re.findall(r"\n|[^\S\n]+|[A-Za-z0-9]+(?:['’_-][A-Za-z0-9]+)*|.",text)
+    for token in tokens:
+        if token=='\n':
+            result.append(line.rstrip());line=''
+            continue
+        if token.isspace():
+            if line:line+=token
+            continue
+        if draw.textlength(token,font=font)>width:
+            raise PresentationError('图示完整单词超出可读宽度，需要更宽布局或拆分教学画面。')
+        if line and draw.textlength(line+token,font=font)>width:
+            result.append(line.rstrip());line=''
+        line+=token
+    if line:result.append(line.rstrip())
     return result
 
 
@@ -138,7 +150,9 @@ def visual_svg(visual, template, width, height, *, reveal=None, art_slots=()):
                 for row,ni in enumerate(layer):boxes[ni-1]=(18+col*(bw+gap),25+row*(bh+24),bw,bh)
         else:
             # Cycles/undirected links do not pretend to be a topological chain.
-            cols=2 if count==4 else min(3,count);rows=(count+cols-1)//cols;gap=74
+            cols=2 if count==4 else min(3,count);rows=(count+cols-1)//cols
+            gap=max(74,min(240,max((ImageDraw.Draw(Image.new('RGB',(1,1))).textlength(
+                e['label'],font=_font(28))+24 for e in visual.get('links',[])),default=74)))
             bw=(width-36-gap*(cols-1))/cols;bh=(h-46-(rows-1)*40)/rows
             boxes=[(18+(i%cols)*(bw+gap),25+(i//cols)*(bh+40),bw,bh) for i in range(count)]
     elif count<=3:
@@ -180,8 +194,15 @@ def visual_svg(visual, template, width, height, *, reveal=None, art_slots=()):
        '<title>教学概念与示例</title><desc>根据讲稿规划的对象、实例及连线；不是物理模拟，审核状态见课程报告。</desc>',
        f'<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4.5 L0,9" fill="#{template.accent}"/></marker></defs>']
     secondary={'classic':'9AC8EF','academic':'9B4F36'}.get(template.id,template.secondary)
+    from zhijiang.course_styles import contrast
+    # secondary is also a decorative palette color. It cannot be assumed to
+    # have sufficient contrast for node names or semantic boundaries.
+    secondary_stroke=secondary if contrast(secondary,template.panel)>=3 else template.accent
     label_accent='806019' if template.id=='paper' else template.accent
     def text(value,x,y,w,size=32,bold=False,color=None,center=False):
+        color=color or template.ink
+        if min(contrast(color,template.panel),contrast(color,template.background))<4.5:
+            color=template.ink
         wrapped=lines(value,w,size)
         for j,line in enumerate(wrapped):
             p.append(f'<text x="{x+w/2 if center else x}" y="{y+j*size*1.26}" text-anchor="{"middle" if center else "start"}" font-family="Microsoft YaHei" font-size="{size}" font-weight="{700 if bold else 400}" fill="#{color or template.ink}">{html.escape(line)}</text>')
@@ -201,7 +222,7 @@ def visual_svg(visual, template, width, height, *, reveal=None, art_slots=()):
             tx=x+18;tw=w-36-(72 if i in art_slots else 0);top=y+18
             if view in {'process','relationship'}:
                 shape=node_shape(item,view)
-                attrs=f'fill="#{template.panel}" stroke="#{template.accent if i%2==0 else secondary}" stroke-width="3"'
+                attrs=f'fill="#{template.panel}" stroke="#{template.accent if i%2==0 else secondary_stroke}" stroke-width="3"'
                 if shape=='decision':
                     p.append(f'<polygon points="{x+w/2},{y} {x+w},{y+bh/2} {x+w/2},{y+bh} {x},{y+bh/2}" {attrs}/>')
                     tx=x+w*.2;tw=w*.6;top=y+bh*.22
@@ -227,17 +248,43 @@ def visual_svg(visual, template, width, height, *, reveal=None, art_slots=()):
                     bold=True,color=label_accent if i%2==0 else secondary,center=graph)
             ch=text(item.get('caption',''),tx,top+lh+12+32,tw,center=graph)
             if top-y+lh+(12+ch if ch else 0)>bh:raise PresentationError('图示内容需要自动拆页。')
-    for i,link in enumerate(visual.get('links',[])):
+    links=visual.get('links',[])
+    parallel={}
+    for i,link in enumerate(links):
+        parallel.setdefault(tuple(sorted((link['source'],link['target']))),[]).append(i)
+    for i,link in enumerate(links):
         if max(link['source'],link['target'])>visible:continue
         a=boxes[link['source']-1];b=boxes[link['target']-1]
-        x1,y1=outline_port(a,b,node_shape(items[link['source']-1],view))
-        x2,y2=outline_port(b,a,node_shape(items[link['target']-1],view))
+        peers=parallel[tuple(sorted((link['source'],link['target'])))];offset=(0.,0.);lane=0
+        if len(peers)>1:
+            import math
+            first,second=[boxes[n-1] for n in sorted((link['source'],link['target']))]
+            dx=second[0]+second[2]/2-first[0]-first[2]/2
+            dy=second[1]+second[3]/2-first[1]-first[3]/2
+            length=math.hypot(dx,dy)
+            lane=(peers.index(i)-(len(peers)-1)/2)*min(36,min(a[2],a[3],b[2],b[3])*.4/max(1,len(peers)-1))
+            if length:offset=(-dy/length*lane,dx/length*lane)
+        x1,y1=outline_port(a,b,node_shape(items[link['source']-1],view),offset=offset)
+        x2,y2=outline_port(b,a,node_shape(items[link['target']-1],view),offset=offset)
         marker='' if link['kind']=='undirected' else ' marker-end="url(#arrow)"'
         p.append(f'<path d="M{x1},{y1} L{x2},{y2}" fill="none" stroke="#{template.accent}" stroke-width="4"{marker}/>')
         # Labels have dedicated upper lanes, avoiding arrow/node intersections.
         label=link['label'];label_lines=lines(label, max(100,abs(x2-x1)),28)
         tx=(x1+x2)/2- max(100,abs(x2-x1))/2
         ty=max(28,min(a[1],b[1])-18-len(label_lines)*35)
+        if len(peers)>1:
+            # Separate reciprocal labels as well as their arrow shafts.
+            # The canonical normal is shared by both directions, so reversing
+            # an edge cannot accidentally put it back on the same lane.
+            label_w=max(100,abs(x2-x1))
+            if abs(x2-x1)>=abs(y2-y1):
+                ty=(min(a[1],b[1])-14-(len(label_lines)-1)*35.28 if lane<0
+                    else max(a[1]+a[3],b[1]+b[3])+36)
+            else:
+                tx=(min(a[0],b[0])-label_w-14 if offset[0]<0 else max(a[0]+a[2],b[0]+b[2])+14)
+                ty=(y1+y2)/2
+            tx=max(18,min(width-label_w-18,tx))
+            ty=max(30,min(h-10-(len(label_lines)-1)*35,ty))
         text(label,tx,ty,max(100,abs(x2-x1)),28)
         if link['kind']=='negative':
             cx=(x1+x2)/2;cy=(y1+y2)/2

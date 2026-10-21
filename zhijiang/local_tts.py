@@ -27,7 +27,7 @@ class SpeechRequest(BaseModel):
 
 
 def create_app(model_dir: Path = MODEL_DIR) -> FastAPI:
-    application = FastAPI(title="智讲本机 Kokoro 语音服务")
+    application = FastAPI(title="绘声绘课 LivelyClass 本机 Kokoro 语音服务")
     model_path = model_dir / "kokoro-v1.1-zh-int8.onnx"
     voices_path = model_dir / "voices-v1.1-zh.bin"
     config_path = model_dir / "config.json"

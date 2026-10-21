@@ -33,15 +33,15 @@ def main() -> None:
     pdfmetrics.registerFont(TTFont("SimHei", str(FONT_PATH)))
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     document = canvas.Canvas(str(OUTPUT), pagesize=A4)
-    document.setTitle("二分查找：智讲 Agent 原创演示讲义")
-    document.setAuthor("智讲 Agent 项目组")
+    document.setTitle("二分查找：绘声绘课 LivelyClass 原创演示讲义")
+    document.setAuthor("绘声绘课 LivelyClass 项目组")
     width, height = A4
     for number, paragraphs in enumerate(PAGES, start=1):
         document.setFillColor(HexColor("#0E2938"))
         document.rect(0, height - 154, width, 154, stroke=0, fill=1)
         document.setFillColor(HexColor("#76DDB9"))
         document.setFont("SimHei", 12)
-        document.drawString(54, height - 52, "智讲 Agent  /  原创演示讲义")
+        document.drawString(54, height - 52, "绘声绘课 LivelyClass  /  原创演示讲义")
         document.setFillColor(HexColor("#FFFFFF"))
         document.setFont("SimHei", 25)
         document.drawString(54, height - 111, "二分查找：从范围缩小到结果判断")

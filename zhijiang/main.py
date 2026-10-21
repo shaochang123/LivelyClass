@@ -16,7 +16,7 @@ from zhijiang.presentation_templates import PPTTemplate, TEMPLATES, template_pre
 from fastapi.staticfiles import StaticFiles
 
 from zhijiang.config import Settings
-from zhijiang.models import GenerationOptions, JobStatus, Mode, SpeechOptions, VoiceMode
+from zhijiang.models import GenerationOptions, JobStatus, Mode, SpeechOptions, VoiceMode, ArtOptions, LearnerProfile
 from zhijiang.models import AnimationMode
 from zhijiang.math_planning import math_capabilities
 from zhijiang.visual_planning import PRIMITIVES, CHECKERS, DOMAIN_VALIDATORS, visual_capabilities
@@ -29,6 +29,50 @@ from zhijiang.credentials import LocalCredentials,CredentialError,endpoint
 
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def configure_source_options(options, fields, previous=None):
+    """Keep old API clients compatible; new UI explicitly requests source reading."""
+    from zhijiang.generated_media import validate_art_options
+    options.narration_mode = fields.get('narration_mode') or (
+        'source_verbatim' if options.style_mode == 'subject' else
+        previous.narration_mode if previous else 'explanatory')
+    options.art = previous.art.model_copy(deep=True) if previous else ArtOptions()
+    learner = previous.learner.model_dump() if previous else LearnerProfile().model_dump()
+    for key in learner:
+        value = fields.get('learner_'+key)
+        if value is not None:
+            learner[key] = value
+    options.learner = LearnerProfile.model_validate(learner)
+    if options.learner.enabled and options.narration_mode != 'source_verbatim':
+        raise HTTPException(400, '学习计划请使用原文课程模式。')
+    if options.learner.enabled and fields.get('mode') == Mode.DEMO:
+        raise HTTPException(400, '个性化学习计划需要真实AI模式。')
+    for kind in ('image', 'video'):
+        service = getattr(options.art, kind)
+        new_url = fields.get(kind+'_base_url')
+        if new_url is not None and new_url.strip().rstrip('/') != service.base_url.rstrip('/'):
+            service.api_key = ''
+        for field in ('protocol', 'base_url', 'model', 'api_key'):
+            value = fields.get(kind+'_'+field)
+            if value is not None and (field != 'api_key' or value):
+                setattr(service, field, value.strip())
+    if fields.get('art_max_assets') is not None:
+        options.art.max_assets = fields['art_max_assets']
+    if options.style_mode == 'subject' and options.narration_mode != 'source_verbatim':
+        raise HTTPException(400, '自动学科编排需要原文字幕与配音模式。')
+    if any(s.protocol != 'disabled' for s in (options.art.image, options.art.video)) and options.narration_mode != 'source_verbatim':
+        raise HTTPException(400, '绘图与视频接口用于原文课程流程，请选择原文模式。')
+    try:validate_art_options(options.art)
+    except ValueError as exc:raise HTTPException(422, str(exc)) from exc
+    if options.narration_mode == 'source_verbatim':
+        names = [options.model, options.review_model, options.math_model]
+        if any('deepseek' in n.lower() for n in names):
+            raise HTTPException(400, '当前原文课程仅使用已授权的本地模型，不使用DeepSeek。')
+        academy = urlparse(options.base_url).hostname == '58.199.177.109'
+        if any((not academy and Settings.model_is_remote(options.provider, options.base_url, n)) or
+               options.provider == 'ollama' and n.lower().endswith((':cloud','-cloud')) for n in names if n):
+            raise HTTPException(400, '原文课程的教材理解与规划须使用本机或学院服务器模型。')
 
 
 class CredentialInput(BaseModel):
@@ -93,7 +137,8 @@ def model_options(settings: Settings, provider: str, base_url: str, model: str,
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         except CredentialError as exc:
             if not options.api_key:raise HTTPException(503,str(exc)) from exc
-    if not options.model or (options.provider == "openai" and not options.api_key):
+    if not options.model or (options.provider == "openai" and not options.api_key and
+                             not Settings._is_loopback(options.base_url) and parsed.hostname != '58.199.177.109'):
         raise HTTPException(400, "请填写模型名称和所需的 API 密钥。")
     return options
 
@@ -138,7 +183,7 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
             finally:
                 runner.shutdown()
 
-    application = FastAPI(title="智讲 Agent", version="0.1.0", lifespan=lifespan)
+    application = FastAPI(title="绘声绘课 LivelyClass", version="0.1.0", lifespan=lifespan)
     from fastapi.exceptions import RequestValidationError
     from fastapi.exception_handlers import request_validation_exception_handler
     from fastapi.responses import JSONResponse
@@ -178,6 +223,8 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
             "credential_persistence": credentials.supported,
             "demo_notice": "演示模式的知识选择和讲稿由确定性规则生成，并非 AI 生成。",
             "ppt_templates": [template.public() for template in TEMPLATES.values()],
+            "default_narration_mode": "source_verbatim",
+            "subject_templates": __import__('zhijiang.subject_routing', fromlist=['FAMILIES']).FAMILIES,
             "ollama_semantic_thinking": settings.ollama_semantic_thinking,
             "ollama_thinking_level": settings.ollama_thinking_level,
             "math_animation": math_capabilities(),
@@ -274,7 +321,13 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         return [template.public() for template in TEMPLATES.values()]
 
     @application.get('/api/ppt-templates/{template_id}/preview')
-    def ppt_template_preview(template_id: PPTTemplate) -> Response:
+    def ppt_template_preview(template_id: PPTTemplate,
+            style_mode: Literal['template','adaptive','comic','subject']='template') -> Response:
+        if style_mode == 'comic':
+            from zhijiang.drama_renderer import drama_preview_svg
+            from zhijiang.presentation_templates import get_template
+            get_template(template_id)
+            return Response(drama_preview_svg(), media_type='image/svg+xml')
         return Response(template_preview_svg(template_id), media_type='image/svg+xml')
 
     @application.post("/api/jobs", status_code=202)
@@ -293,6 +346,22 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         custom_prompt: Annotated[str, Form()] = "",
         animation_mode: Annotated[AnimationMode, Form()] = "auto",
         ppt_template: Annotated[PPTTemplate, Form()] = 'classic',
+        style_mode: Annotated[Literal['template','adaptive','comic','subject'], Form()] = 'template',
+        narration_mode: Annotated[Literal['explanatory','source_verbatim'] | None, Form()] = None,
+        learner_enabled: Annotated[bool | None, Form()] = None,
+        learner_background: Annotated[str | None, Form(max_length=1000)] = None,
+        learner_goal: Annotated[str | None, Form(max_length=1000)] = None,
+        learner_days: Annotated[int | None, Form(ge=1, le=30)] = None,
+        learner_minutes_per_day: Annotated[int | None, Form(ge=5, le=240)] = None,
+        image_protocol: Annotated[Literal['disabled','images','jimeng'] | None, Form()] = None,
+        image_base_url: Annotated[str | None, Form(max_length=500)] = None,
+        image_model: Annotated[str | None, Form(max_length=160)] = None,
+        image_api_key: Annotated[str | None, Form(max_length=2000)] = None,
+        video_protocol: Annotated[Literal['disabled','seedance'] | None, Form()] = None,
+        video_base_url: Annotated[str | None, Form(max_length=500)] = None,
+        video_model: Annotated[str | None, Form(max_length=160)] = None,
+        video_api_key: Annotated[str | None, Form(max_length=2000)] = None,
+        art_max_assets: Annotated[int | None, Form(ge=1, le=200)] = None,
         use_illustrations: Annotated[bool, Form()] = True,
         content_checks: Annotated[str, Form(pattern='^(warn|strict)$')] = 'warn',
         tts_base_url: Annotated[str, Form()] = "",
@@ -310,6 +379,10 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
             raise HTTPException(400, "数学推演需要选择真实 AI 模式。")
         options.animation_mode = animation_mode if mode == Mode.AI else "basic"
         options.ppt_template = ppt_template
+        if style_mode != 'template' and mode != Mode.AI:
+            raise HTTPException(400, '学科自适应与漫剧风格需要真实 AI 模式。')
+        options.style_mode = style_mode
+        configure_source_options(options, locals())
         options.use_illustrations = use_illustrations
         options.content_checks = content_checks
         if options.animation_mode in {"math","visual","geometry"} and (options.content_checks=='strict' or options.animation_mode!='visual') and not (
@@ -323,7 +396,8 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         external_text = mode == Mode.AI and any(Settings.model_is_remote(options.provider,options.base_url,name)
             for name in [options.model,options.review_model,options.math_model] if name)
         external_voice = voice_mode == VoiceMode.AI and not Settings._is_loopback(voice_options.base_url)
-        if (external_text or external_voice) and not remote_consent:
+        from zhijiang.generated_media import art_is_remote
+        if (external_text or external_voice or art_is_remote(options.art)) and not remote_consent:
             raise HTTPException(400, "调用外部服务前须同意发送提取文本、数学模式的教材页图像或讲稿。")
         filename = (file.filename or "source.pdf").replace("\\", "/").split("/")[-1]
         if not filename.lower().endswith(".pdf"):
@@ -369,7 +443,7 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         path = store.jobs_dir / job_id / "lesson.mp4"
         if job["status"] != JobStatus.COMPLETED or not path.is_file():
             raise HTTPException(409, "视频尚未生成。")
-        return FileResponse(path, media_type="video/mp4", filename="zhijiang-lesson.mp4",
+        return FileResponse(path, media_type="video/mp4", filename="LivelyClass-lesson.mp4",
                             content_disposition_type="inline")
 
     @application.get("/api/jobs/{job_id}/presentation")
@@ -383,7 +457,7 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         return FileResponse(
             path,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            filename="zhijiang-lesson.pptx",
+            filename="LivelyClass-lesson.pptx",
         )
 
     @application.get("/api/jobs/{job_id}/math-scenes")
@@ -409,6 +483,32 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
             raise HTTPException(409,"教学场景数据尚未生成。")
         return FileResponse(path,media_type="application/json",filename="teaching-scenes.json")
 
+    @application.get('/api/jobs/{job_id}/subtitles')
+    def get_source_subtitles(job_id: str, format: Literal['srt','vtt','json']='srt'):
+        return source_artifact(job_id, 'subtitles.'+format,
+            {'srt':'application/x-subrip','vtt':'text/vtt','json':'application/json'}[format])
+
+    @application.get('/api/jobs/{job_id}/transcript')
+    def get_source_transcript(job_id: str):
+        return source_artifact(job_id, 'source-transcript.txt', 'text/plain')
+
+    @application.get('/api/jobs/{job_id}/source-coverage')
+    def get_source_coverage(job_id: str):
+        return source_artifact(job_id, 'source-coverage.json', 'application/json')
+
+    @application.get('/api/jobs/{job_id}/learning-plan')
+    def get_learning_plan(job_id: str, format: Literal['md','json']='md'):
+        return source_artifact(job_id, 'learning-plan.'+format,
+            'application/json' if format == 'json' else 'text/markdown')
+
+    def source_artifact(job_id, name, media_type):
+        job=store.get(job_id)
+        if job is None:raise HTTPException(404, '任务不存在。')
+        path=store.jobs_dir/job_id/name
+        if job['status']!=JobStatus.COMPLETED or not path.is_file():
+            raise HTTPException(409, '请求的课程附件尚未完成。')
+        return FileResponse(path, media_type=media_type, filename=name)
+
     @application.post("/api/jobs/{job_id}/retry", status_code=202)
     def retry_job(job_id: str, llm_api_key: Annotated[str, Form()] = "",
                   tts_api_key: Annotated[str, Form()] = "",
@@ -422,6 +522,22 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
                   custom_prompt: Annotated[str | None, Form()] = None,
                   animation_mode: Annotated[AnimationMode | None, Form()] = None,
                   ppt_template: Annotated[PPTTemplate | None, Form()] = None,
+                  style_mode: Annotated[Literal['template','adaptive','comic','subject'] | None, Form()] = None,
+                  narration_mode: Annotated[Literal['explanatory','source_verbatim'] | None, Form()] = None,
+                  learner_enabled: Annotated[bool | None, Form()] = None,
+                  learner_background: Annotated[str | None, Form(max_length=1000)] = None,
+                  learner_goal: Annotated[str | None, Form(max_length=1000)] = None,
+                  learner_days: Annotated[int | None, Form(ge=1, le=30)] = None,
+                  learner_minutes_per_day: Annotated[int | None, Form(ge=5, le=240)] = None,
+                  image_protocol: Annotated[Literal['disabled','images','jimeng'] | None, Form()] = None,
+                  image_base_url: Annotated[str | None, Form(max_length=500)] = None,
+                  image_model: Annotated[str | None, Form(max_length=160)] = None,
+                  image_api_key: Annotated[str | None, Form(max_length=2000)] = None,
+                  video_protocol: Annotated[Literal['disabled','seedance'] | None, Form()] = None,
+                  video_base_url: Annotated[str | None, Form(max_length=500)] = None,
+                  video_model: Annotated[str | None, Form(max_length=160)] = None,
+                  video_api_key: Annotated[str | None, Form(max_length=2000)] = None,
+                  art_max_assets: Annotated[int | None, Form(ge=1, le=200)] = None,
                   use_illustrations: Annotated[bool | None, Form()] = None,
                   content_checks: Annotated[str | None, Form(pattern='^(warn|strict)$')] = None,
                   tts_base_url: Annotated[str | None, Form()] = None,
@@ -463,6 +579,11 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         else:
             options = GenerationOptions(animation_mode="basic")
         options.ppt_template = ppt_template or store.get_options(job_id).ppt_template
+        options.style_mode = style_mode or store.get_options(job_id).style_mode
+        previous_options = store.get_options(job_id)
+        configure_source_options(options, locals(), previous_options)
+        if options.style_mode != 'template' and mode != Mode.AI:
+            raise HTTPException(400, '学科自适应与漫剧风格需要真实 AI 模式。')
         options.use_illustrations = (store.get_options(job_id).use_illustrations
                                     if use_illustrations is None else use_illustrations)
         options.content_checks = content_checks or store.get_options(job_id).content_checks
@@ -480,13 +601,17 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
             for name in [options.model,options.review_model,options.math_model] if name)
         external_voice = (voice_mode == VoiceMode.AI
                           and not Settings._is_loopback(voice_options.base_url))
+        from zhijiang.generated_media import art_is_remote
+        external_art = art_is_remote(options.art)
         consent = job["remote_consent"] if remote_consent is None else remote_consent
         changed_external_destination = ((external_text and (options.base_url != job["model_settings"].get("base_url") or
                                          options.model != job["model_settings"].get("model") or
                                          options.review_model != job["model_settings"].get("review_model",'') or
                                          options.math_model != job["model_settings"].get("math_model",'')))
                                         or (external_voice and voice_options.base_url != job["voice_settings"].get("base_url")))
-        if (external_text or external_voice) and (not consent or (changed_external_destination and remote_consent is not True)):
+        changed_external_destination = changed_external_destination or (external_art and
+            options.art.model_dump() != previous_options.art.model_dump())
+        if (external_text or external_voice or external_art) and (not consent or (changed_external_destination and remote_consent is not True)):
             raise HTTPException(400, "调用外部服务前须重新提交并同意发送文本及数学模式的教材页图像。")
         if not (store.jobs_dir / job_id / "source.pdf").is_file():
             raise HTTPException(409, "原始 PDF 已丢失，请重新上传。")
@@ -496,6 +621,7 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         store.clear_api_key(job_id)
         store.set_api_key(job_id, options.api_key)
         store.set_tts_api_key(job_id, voice_options.api_key)
+        store.set_art_api_keys(job_id, options.art)
         runner.submit(job_id)
         return store.get(job_id)
 

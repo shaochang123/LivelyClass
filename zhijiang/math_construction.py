@@ -412,7 +412,8 @@ class Compiler:
             return
         if op=='point_on_function':
             curve=self.items[refs[0]]
-            if curve['type']!='function':raise VisualSceneError('point_on_function必须引用真实函数。')
+            if curve['type']!='function':raise ConstructionObjectError(item.id,
+                f"point_on_function必须引用真实函数；{refs[0]}的实际类型为{curve['type']}。参数曲线应使用point_on_curve。")
             shape=next(shape for shape in self.shapes if shape.id==refs[0])
             self.curve_point_checks.append({'object':item.id,'curve':refs[0],'parameter':self.render_expression(v[0]),'domain':shape.domain})
             item=item.model_copy(update={'color':next(s.color for s in self.shapes if s.id==refs[0])})
@@ -420,7 +421,8 @@ class Compiler:
             self.proofs.append({'construction':item.id,'law':'Point coordinates derive from the referenced function'});return
         if op=='point_on_curve':
             curve=self.items[refs[0]]
-            if curve['type']!='parametric':raise VisualSceneError('point_on_curve必须引用参数曲线或角弧。')
+            if curve['type']!='parametric':raise ConstructionObjectError(item.id,
+                f"point_on_curve必须引用参数曲线或角弧；{refs[0]}的实际类型为{curve['type']}。函数图像上的点应使用point_on_function。")
             shape=next(shape for shape in self.shapes if shape.id==refs[0])
             self.curve_point_checks.append({'object':item.id,'curve':refs[0],'parameter':self.render_expression(v[0]),'domain':shape.domain})
             self.bind_point(item,sp.Matrix([e.subs(self.x,v[0]) for e in curve['expr']]))

@@ -11,8 +11,15 @@ import imageio_ffmpeg
 
 def media_fingerprint(lesson, audio_files):
     from zhijiang.visual_assets import AssetCatalog
-    from zhijiang.presentation_templates import get_template,template_backdrop_svg
-    digest = hashlib.sha256(('shared-pages-v26-source-figure-aspect-static-deck'+lesson.model_dump_json()).encode())
+    from zhijiang.presentation_templates import template_backdrop_svg
+    from zhijiang.course_styles import effective_template
+    digest = hashlib.sha256(('shared-pages-v30-readable-reciprocal-edges'+lesson.model_dump_json()).encode())
+    if audio_files:
+        root=Path(audio_files[0]).parent
+        for items in (lesson.deck_plan or {}).get('generated_media',{}).values():
+            for item in items:
+                for field in ('file','video'):
+                    if item.get(field) and (root/item[field]).is_file():digest.update((root/item[field]).read_bytes())
     # Program-selected source crops affect PPT and video, not just course JSON.
     for figure in (lesson.deck_plan or {}).get('source_figures',{}).values():
         if audio_files:
@@ -21,7 +28,7 @@ def media_fingerprint(lesson, audio_files):
             path=root/figure['file']
             if path.is_file():digest.update(path.read_bytes())
     digest.update(AssetCatalog().fingerprint.encode())
-    template=get_template(lesson.ppt_template)
+    template=effective_template(lesson)
     digest.update(repr(template).encode())
     digest.update(template_backdrop_svg(template).encode())
     for audio in audio_files:
@@ -106,12 +113,39 @@ def clip_duration(path):
     return hours*3600+minutes*60+seconds
 
 
+def scene_on_video(background, source, viewport, output, duration):
+    """Keep a computed continuous scene inside an animated comic background.
+
+    Only the background's original narration is mapped, so speech is not doubled.
+    """
+    x,y,w,h=viewport
+    w=round(w)//2*2;h=round(h)//2*2
+    filters=(f'[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,setsar=1,setpts=PTS-STARTPTS[scene];'
+        f'[0:v][scene]overlay=x={x}+({w}-overlay_w)/2:y={y}+({h}-overlay_h)/2:eof_action=repeat[out]')
+    _run(['-i',str(background),'-i',str(source),'-filter_complex',filters,
+        '-map','[out]','-map','0:a:0',*_encoding(),'-t',str(duration),str(output)],output)
+
+
 def concatenate_pages(clips, output):
     output = Path(output)
     manifest = output.parent/'shared-clips.txt'
     manifest.write_text('\n'.join("file '"+str(Path(p).resolve().as_posix()).replace("'", "'\\''")+"'"
                                   for p in clips)+'\n', encoding='utf-8')
     _run(['-f','concat','-safe','0','-i',str(manifest), *_encoding(),str(output)], output)
+
+
+def overlay_generated_window(background, source, viewport, output, start, end, duration, *, still=False):
+    """Hold the final generated frame; map only textbook narration, never provider audio."""
+    x,y,w,h=viewport;w=round(w)//2*2;h=round(h)//2*2
+    inputs=['-i',str(background)]
+    if still:inputs+=['-loop','1','-framerate','30']
+    inputs+=['-i',str(source)]
+    filters=(f'[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,setsar=1,'
+        f'tpad=stop_mode=clone:stop_duration={duration},setpts=PTS-STARTPTS+{start}/TB[art];'
+        f'[0:v][art]overlay=x={x}+({w}-overlay_w)/2:y={y}+({h}-overlay_h)/2:'
+        f"enable='gte(t,{start})*lt(t,{end})':eof_action=repeat[out]")
+    _run([*inputs,'-filter_complex',filters,'-map','[out]','-map','0:a:0',
+        *_encoding(),'-t',str(duration),str(output)],output)
 
 
 def render_shared_video(lesson, audio_files, output):
@@ -133,4 +167,5 @@ def render_shared_video(lesson, audio_files, output):
     concatenate_pages(clips, output)
     (output.parent/'video-timeline.json').write_text(json.dumps({'template_id': lesson.ppt_template,
         'segments': data['segments'], 'bookends':bookends,'narration_uses_per_segment': 1,
-        'visual_source': 'shared-native-slide-layout'}, ensure_ascii=False, indent=2), encoding='utf-8')
+        'visual_source': ('illustrated-scene-drama' if data.get('story_format')=='scene_drama' else
+                          'shared-vector-comic' if data.get('style_mode')=='comic' else 'shared-native-slide-layout')}, ensure_ascii=False, indent=2), encoding='utf-8')

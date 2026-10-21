@@ -86,7 +86,7 @@ def render_slide(lesson: Lesson, segment: LessonSegment, number: int,
     image = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((44, 34, 1236, 110), radius=20, fill=PANEL)
-    draw.text((70, 52), "智讲 Agent", font=_font(33, True), fill=ACCENT)
+    draw.text((70, 52), "绘声绘课 LivelyClass", font=_font(33, True), fill=ACCENT)
     label = "确定性演示模式" if lesson.mode == Mode.DEMO else "AI 生成 · 需人工复核"
     draw.text((850, 59), label, font=_font(21), fill=MUTED)
     _text_block(draw, (62, 140), segment.title, _font(42, True), TEXT, 1150, 2)

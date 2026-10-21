@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "zhijiang-agent"
 version = "0.1.0"
-description = "智讲 Agent：将有使用权的 PDF 转为可溯源教学视频与 PPTX 课件"
+description = "绘声绘课 LivelyClass：将有使用权的 PDF 转为可溯源教学视频与 PPTX 课件"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -23,22 +23,26 @@ let speechPreviewState = {identity: "", info: null, loading: false, generating: 
 let speechPreviewRequest = 0;
 let speechPreviewTimer = null;
 let shownSettingsJobId = null;
-let templateSelectionEdited = false;
 let voiceSelectionEdited = false;
-let illustrationSelectionEdited = false;
-$("#use-illustrations").addEventListener("change", () => { illustrationSelectionEdited = true; });
 
-function updateTemplatePreview() {
-  const id = $("#ppt-template").value;
-  const template = config?.ppt_templates?.find(item => item.id === id);
-  const image = $("#ppt-template-preview");
-  image.src = `/api/ppt-templates/${encodeURIComponent(id)}/preview`;
-  image.alt = `${template?.name || id}模板的版式示意`;
+function updateDirectorNote() {
+  $("#director-description").textContent = selected("mode") === "ai"
+    ? "模型阅读教材后，自动识别学科，选择课件风格、页面布局以及图示或动画。你可以在‘PPT编排要求’中描述希望达到的效果。"
+    : "演示模式按教材顺序生成基础图文课件。选择AI生成后，由模型自动识别学科并安排画面。";
 }
-$("#ppt-template").addEventListener("change", () => {
-  templateSelectionEdited = true;
-  updateTemplatePreview();
-});
+
+function appendDirectorOptions(body) {
+  const ai = selected("mode") === "ai";
+  body.append("style_mode", ai ? "subject" : "template");
+  body.append("animation_mode", ai ? "auto" : "basic");
+  body.append("ppt_template", "paper"); // Initial layout only; AI routing selects the actual template.
+  body.append("content_checks", "warn");
+  body.append("use_illustrations", "true");
+  body.append("learner_enabled", String(ai && $("#learner-enabled").checked));
+  for (const name of ["learner_background", "learner_goal", "learner_days", "learner_minutes_per_day"]) {
+    body.append(name, form.elements[name].value);
+  }
+}
 
 async function getJSON(url, options = {}) {
   const response = await fetch(url, options);
@@ -203,6 +207,7 @@ $("#generate-speech-preview").addEventListener("click", async () => {
 });
 
 function clearSubmittedKeys() {
+  for (const kind of ["image","video"]) $(`#${kind}-api-key`).value = "";
   for (const kind of ["llm","tts"]) {
     const state=credentialStates[kind];
     if (!$(`#remember-${kind}-key`).checked || (state.saved && state.profile===credentialIdentity(credentialProfile(kind)))) {
@@ -221,7 +226,17 @@ function updateConsent() {
   const localVoice = isLocalURL(ttsURL);
   const modelName = $("#llm-model").value || config?.llm_model || "";
   const cloudModel = $("#llm-provider").value === "ollama" && [modelName,$("#llm-review-model").value,$("#llm-math-model").value].some(name=>/(:cloud|-cloud)$/i.test(name));
-  const remote = (ai && (!isLocalURL(modelURL) || cloudModel)) || (aiVoice && !localVoice);
+  let remoteArt = false;
+  for (const kind of ["image", "video"]) {
+    const enabled = $(`#${kind}-protocol`).value !== "disabled";
+    const remote = enabled && !isLocalURL($(`#${kind}-base-url`).value);
+    remoteArt ||= remote;
+    for (const field of ["base-url","model","api-key"]) {
+      $(`#${kind}-${field}`).disabled = !enabled;
+      $(`#${kind}-${field}`).required = enabled && (field !== "api-key" || remote);
+    }
+  }
+  const remote = (ai && (!isLocalURL(modelURL) || cloudModel)) || (aiVoice && !localVoice) || remoteArt;
   $("#remote-consent-row").hidden = !remote;
   $("#remote-consent").required = remote;
   if (!remote) $("#remote-consent").checked = false;
@@ -231,7 +246,7 @@ function updateConsent() {
     modelName === config?.llm_model;
   $("#llm-base-url").required = ai && provider !== config?.llm_provider;
   $("#llm-model").required = ai && provider !== config?.llm_provider;
-  $("#llm-api-key").required = ai && provider === "openai" && !hasCredential("llm") && !(usesDefaultModel && config?.llm_ready);
+  $("#llm-api-key").required = ai && provider === "openai" && !isLocalURL(modelURL) && !hasCredential("llm") && !(usesDefaultModel && config?.llm_ready);
   $("#llm-api-key").placeholder = hasCredential("llm") ? "已保存，留空即可使用" : provider === "ollama" ? "本机 Ollama 可留空" : "填写 API 密钥";
   for (const name of ["tts_base_url", "tts_model", "tts_voice"]) {
     form.elements[name].required = aiVoice;
@@ -263,7 +278,27 @@ dropzone.addEventListener("drop", (event) => {
   if (event.dataTransfer.files.length) setFile(event.dataTransfer.files[0]);
 });
 fileInput.addEventListener("change", () => { if (fileInput.files.length) $("#file-label").textContent = fileInput.files[0].name; });
-form.querySelectorAll('input[type="radio"]').forEach((input) => input.addEventListener("change", updateConsent));
+form.querySelectorAll('input[type="radio"]').forEach((input) => input.addEventListener("change", () => {
+  if (selected("mode") === "demo") {
+    $("#image-protocol").value = "disabled";$("#video-protocol").value = "disabled";
+  }
+  updateDirectorNote(); updateConsent();
+}));
+for (const kind of ["image","video"]) {
+  $(`#${kind}-protocol`).addEventListener("change", () => {
+    if (kind === "image" && $("#image-protocol").value === "jimeng") {
+      $("#image-base-url").value = "https://openapi.cv.volces.com";
+      $("#image-model").value = "jimeng_t2i_v30";
+      $("#image-api-key").value = "";
+    }
+    if ($(`#${kind}-protocol`).value !== "disabled") form.querySelector('input[name="mode"][value="ai"]').checked = true;
+    $("#remote-consent").checked = false; updateConsent();
+  });
+  $(`#${kind}-base-url`).addEventListener("input", () => {
+    $(`#${kind}-api-key`).value = "";$("#remote-consent").checked = false;updateConsent();
+  });
+  $(`#${kind}-model`).addEventListener("input", () => {$("#remote-consent").checked=false;});
+}
 form.querySelectorAll('input[name="voice_mode"]').forEach(input => input.addEventListener("change", () => { voiceSelectionEdited = true; }));
 $("#llm-provider").addEventListener("change", () => {
   const fields = ["llm_base_url", "llm_model", "llm_review_model", "llm_math_model"];
@@ -280,10 +315,6 @@ $("#llm-provider").addEventListener("change", () => {
   $("#llm-api-key").value = "";
   rememberServiceFields();
   refreshCredential("llm");
-  updateConsent();
-});
-$("#animation-mode").addEventListener("change", () => {
-  if (["math","visual","geometry"].includes($("#animation-mode").value)) form.querySelector('input[name="mode"][value="ai"]').checked = true;
   updateConsent();
 });
 $("#llm-base-url").addEventListener("input", updateConsent);
@@ -337,9 +368,17 @@ function showJob(job) {
     const voiceChoice = form.querySelector(`input[name="voice_mode"][value="${job.voice_mode}"]`);
     if (voiceChoice && !voiceSelectionEdited) voiceChoice.checked = true;
     // A delayed restore of the previous job must not replace a new choice.
-    if (!templateSelectionEdited) $("#ppt-template").value = job.model_settings?.ppt_template || "classic";
-    if (!illustrationSelectionEdited) $("#use-illustrations").checked = job.model_settings?.use_illustrations ?? true;
-    updateTemplatePreview();
+    for (const kind of ["image","video"]) {
+      const media = job.model_settings?.art?.[kind];
+      if (media) for (const field of ["protocol","base_url","model"]) form.elements[`${kind}_${field}`].value = media[field] || (field === "protocol" ? "disabled" : "");
+    }
+    $("#art-max-assets").value = job.model_settings?.art?.max_assets || 12;
+    const learner = job.model_settings?.learner || {};
+    $("#learner-enabled").checked = Boolean(learner.enabled);
+    $("#learner-background").value = learner.background || "";
+    $("#learner-goal").value = learner.goal || "";
+    $("#learner-days").value = learner.days || 3;
+    $("#learner-minutes").value = learner.minutes_per_day || 30;
     if (job.mode === "ai" && job.model_settings) {
       $("#llm-provider").value = job.model_settings.provider || "openai";
       activeProvider = $("#llm-provider").value;
@@ -348,15 +387,13 @@ function showJob(job) {
       $("#llm-review-model").value = job.model_settings.review_model || "";
       $("#llm-math-model").value = job.model_settings.math_model || "";
       $("#custom-prompt").value = job.model_settings.prompt || "";
-      $("#animation-mode").value = job.model_settings.animation_mode || "auto";
-      $("#content-checks").value = job.model_settings.content_checks || "warn";
     }
     if (job.voice_mode === "ai" && job.voice_settings) {
       $("#tts-base-url").value = job.voice_settings.base_url || "";
       $("#tts-model").value = job.voice_settings.model || "";
       $("#tts-voice").value = job.voice_settings.voice || "";
     }
-    updateConsent();
+    updateDirectorNote(); updateConsent();
     rememberServiceFields();
     refreshCredential("llm"); refreshCredential("tts");
     if (!$("#remote-consent-row").hidden) $("#remote-consent").checked = job.remote_consent;
@@ -400,7 +437,7 @@ function addSegment(segment, index) {
   quote.textContent = segment.evidence.quote;
   source.append(sourceHeading, quote);
   const scene = segment.math_scene || segment.visual_scene;
-  if (!scene) body.append(narration);
+  if (!scene || segment.source_spans?.length) body.append(narration);
   if (scene) {
     if (scene.diagram) {
       const strategy = document.createElement("p");
@@ -423,7 +460,7 @@ function addSegment(segment, index) {
       }
     }
     const steps = document.createElement("ol");
-    scene.beats.forEach((beat) => {
+    (segment.source_spans?.length ? [] : scene.beats).forEach((beat) => {
       const item = document.createElement("li");
       item.textContent = beat.narration;
       steps.append(item);
@@ -448,10 +485,44 @@ async function showLesson(jobId) {
   }
   if (!$("#lesson-notice").childElementCount) $("#lesson-notice").textContent = "无生成提示";
   const template = config?.ppt_templates?.find(item => item.id === lesson.ppt_template);
-  $("#ppt-template-result").textContent = `PPT：${template?.name || "深色演示"}${lesson.deck_plan?.planner === "model_layout_selection" ? " · AI 规划页面版式" : lesson.deck_plan?.planner === "deterministic_demo_layout" ? " · 规则排版" : ""}`;
+  const courseStyle = lesson.deck_plan?.course_style;
+  $("#ppt-template-result").textContent = courseStyle
+    ? `${courseStyle.format === "scene_drama" ? "场景漫剧" : courseStyle.mode === "comic" ? "漫剧讲解" : "学科自适应"}：${courseStyle.design.name} · ${courseStyle.design.subject}${lesson.deck_plan?.drama_production?.medium === "image" ? " · 插画分镜" : lesson.deck_plan?.drama_production?.medium === "video" ? " · 动态片段" : ""}`
+    : `PPT：${template?.name || "深色演示"}${lesson.deck_plan?.planner === "model_layout_selection" ? " · AI 规划页面版式" : lesson.deck_plan?.planner === "deterministic_demo_layout" ? " · 规则排版" : ""}`;
   $("#segment-count").textContent = `${lesson.segments.length} 个讲解片段`;
   $("#voice-note").textContent = lesson.voice_mode === "ai" ? "AI 配音" : "系统配音";
   $("#generation-mode").textContent = lesson.mode === "ai" ? "AI 生成" : "规则生成";
+  const routing = lesson.deck_plan?.subject_routing;
+  const literal = lesson.deck_plan?.narration_mode === "source_verbatim";
+  const routedTemplate = config?.ppt_templates?.find(item => item.id === routing?.selection?.template_id);
+  const mediumNames = {svg:"SVG图解", computed:"连续图形演示", scene_drama:"场景漫剧", generated_illustration:"原创插画"};
+  const actualMedia = [...new Set(Object.values(lesson.deck_plan?.visual_story?.visuals || {}).map(v => mediumNames[v.executed_medium]).filter(Boolean))];
+  $("#source-route-result").textContent = [routing ? `已识别学科：${routing.classification.subject} · ${routedTemplate?.name || "课程模板"}` : "",
+    actualMedia.length ? `实际画面：${actualMedia.join("、")}` : "",
+    literal ? "字幕、配音逐字使用教材提取文本；PPT独立提炼与绘图。" : ""].filter(Boolean).join("\n");
+  $("#source-exports").hidden = !literal;
+  $("#download-subtitles").href = `/api/jobs/${jobId}/subtitles`;
+  $("#download-transcript").href = `/api/jobs/${jobId}/transcript`;
+  $("#download-coverage").href = `/api/jobs/${jobId}/source-coverage`;
+  const studyPlan = lesson.deck_plan?.learning_plan;
+  $("#learning-plan-result").hidden = !studyPlan;
+  $("#learning-plan-sessions").replaceChildren();
+  if (studyPlan) {
+    $("#download-learning-plan").href = `/api/jobs/${jobId}/learning-plan`;
+    $("#learning-plan-overview").textContent = studyPlan.overview;
+    $("#learning-plan-time").textContent = `${studyPlan.sessions.length}天 · 每天${studyPlan.profile.minutes_per_day}分钟 · 共${studyPlan.total_minutes}分钟。${studyPlan.time_note || ""}`;
+    for (const session of studyPlan.sessions) {
+      const details = document.createElement("details"); details.className = "segment";
+      const title = document.createElement("summary"); title.textContent = `第${session.day}天 · ${session.title}（${session.minutes}分钟）`;
+      const content = document.createElement("div"); content.className = "segment-body";
+      const refs = document.createElement("p"); refs.textContent = `课程片段 ${session.segment_ids.join("、")} · PDF 第${session.source_pages.join("、")}页`;
+      const activities = document.createElement("ul");
+      for (const activity of session.activities) { const item = document.createElement("li"); item.textContent = activity; activities.append(item); }
+      const check = document.createElement("p"); check.textContent = `自测：${session.self_check}`;
+      content.append(refs, activities, check); details.append(title, content);
+      $("#learning-plan-sessions").append(details);
+    }
+  }
   $("#segments").replaceChildren();
   lesson.segments.forEach(addSegment);
   const videoURL = `/api/jobs/${jobId}/video`;
@@ -460,7 +531,7 @@ async function showLesson(jobId) {
   $("#download-presentation").href = `/api/jobs/${jobId}/presentation`;
   const report = lesson.animation_report || {};
   $("#math-report").hidden = !report.renderer;
-  $("#math-report").textContent = report.content_checks === "warn" ? "SVG 教学图示 · 逐步呈现" : report.scene_count ?
+  $("#math-report").textContent = report.scene_count ?
     `${report.scene_count} 个${report.scene_type === "general" ? "教学" : "数学推演"}场景 · ${report.renderer}` : report.reason || "基础图示";
   $("#download-math-scenes").hidden = !report.scene_count;
   $("#download-math-scenes").href = `/api/jobs/${jobId}/scenes`;
@@ -489,6 +560,14 @@ async function refreshJob() {
   }
 }
 
+function appendSourceOptions(body) {
+  body.append("narration_mode", "source_verbatim");
+  body.append("art_max_assets", $("#art-max-assets").value);
+  for (const kind of ["image","video"]) for (const field of ["protocol","base_url","model","api_key"]) {
+    body.append(`${kind}_${field}`, form.elements[`${kind}_${field}`].value);
+  }
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   refreshJob();
@@ -508,10 +587,8 @@ form.addEventListener("submit", async (event) => {
     body.append("file", fileInput.files[0]);
     body.append("mode", selected("mode"));
     body.append("voice_mode", selected("voice_mode"));
-    body.append("animation_mode", $("#animation-mode").value);
-    body.append("ppt_template", $("#ppt-template").value);
-    body.append("use_illustrations", String($("#use-illustrations").checked));
-    body.append("content_checks", $("#content-checks").value);
+    appendDirectorOptions(body);
+    appendSourceOptions(body);
     body.append("rights_confirmed", String($("#rights-confirmed").checked));
     body.append("remote_consent", String($("#remote-consent").checked));
     if (selected("mode") === "ai") {
@@ -563,10 +640,8 @@ $("#retry-button").addEventListener("click", async () => {
     const body = new FormData();
     body.append("mode", selected("mode"));
     body.append("voice_mode", selected("voice_mode"));
-    body.append("animation_mode", $("#animation-mode").value);
-    body.append("ppt_template", $("#ppt-template").value);
-    body.append("use_illustrations", String($("#use-illustrations").checked));
-    body.append("content_checks", $("#content-checks").value);
+    appendDirectorOptions(body);
+    appendSourceOptions(body);
     body.append("remote_consent", String($("#remote-consent").checked));
     body.append("replace_settings", "true");
     if (selected("mode") === "ai") {
@@ -594,14 +669,13 @@ $("#retry-button").addEventListener("click", async () => {
 (async function initialize() {
   try {
     config = await getJSON("/api/config");
-    const chosenTemplate = $("#ppt-template").value;
-    $("#ppt-template").replaceChildren(...config.ppt_templates.map(template => {
-      const option = document.createElement("option");
-      option.value = template.id; option.textContent = template.name;
-      return option;
-    }));
-    $("#ppt-template").value = chosenTemplate || "paper";
-    updateTemplatePreview();
+    if (!config.default_narration_mode) {
+      $("#submit-button").disabled = true;
+      $("#retry-button").disabled = true;
+      $("#submit-button").textContent = "请重启服务以启用原文课程";
+      $(".source-policy").textContent = "界面已更新，当前后台仍是旧版本。请重启启动服务的终端，再使用原文字幕、学科编排与绘图接口。";
+    }
+    updateDirectorNote();
     $("#pdf-limits").textContent = `文字版 / 扫描版 · ${Math.round(config.max_pdf_bytes / 1024 / 1024)} MB 以内`;
     $("#llm-provider").value = config.llm_provider === "ollama" ? "ollama" : "openai";
     activeProvider = $("#llm-provider").value;

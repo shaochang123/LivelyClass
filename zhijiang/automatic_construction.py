@@ -51,7 +51,19 @@ def graph_patch_schema(graph, object_id=None):
                  Field(min_length=1,max_length=1) if target else Field(default_factory=list,max_length=16)))
 
 
-def build_scene(client, document, requests, *, folder, source_image_loader=None,planning_client=None,review_client=None):
+def source_timing_behavior(schema):
+    """Source-reading scenes plan geometry only; they do not author new speech."""
+    from typing import get_args
+    operation=get_args(schema.model_fields['operations'].annotation)[0]
+    placeholder='观察当前对象与参数的变化，具体测量以画面为准。'
+    timed=create_model('SourceTimingOperation',__base__=operation,
+        narration=(Literal[placeholder],Field(default=placeholder)))
+    return create_model('SourceTimingBehavior',__base__=schema,
+        operations=(list[timed],Field(min_length=3,max_length=10)))
+
+
+def build_scene(client, document, requests, *, folder, source_image_loader=None,planning_client=None,review_client=None,
+                source_verbatim=False):
     from zhijiang.mathematical_planning import source_material, CONTRACT, review_step_states
     from zhijiang.math_construction import MathProgramDraft, MathConstructionDraft, MathematicalClaim, MathProgramReview, ConstructionLayoutError, compile_program, Compiler
     from zhijiang.math_tool_schema import typed_construction
@@ -72,7 +84,7 @@ def build_scene(client, document, requests, *, folder, source_image_loader=None,
         for name in ('math_construction.py','math_tool_schema.py','math_behavior.py','math_inventory.py','math_graph_repair.py',
                      'visual_planning.py','visual_media.py','automatic_construction.py','source_figures.py')}
     fingerprint=hashlib.sha256(json.dumps({'version':'automatic-construction-v3-staged-tools','source':source,'code':code_hashes,
-        'requests':requests,'contract':CONTRACT,
+        'requests':requests,'contract':CONTRACT,'source_verbatim':source_verbatim,
         'planning_model':getattr(planning_client,'model',''),'planning_endpoint':getattr(planning_client,'base_url',''),
         'review_model':getattr(review_client,'model',''),'review_endpoint':getattr(review_client,'base_url',''),
         'planning_thinking':getattr(planning_client,'semantic_thinking',True),
@@ -136,6 +148,7 @@ def build_scene(client, document, requests, *, folder, source_image_loader=None,
                 raise
             try:
                 behavior_type=behavior_schema(graph,mapping)
+                if source_verbatim:behavior_type=source_timing_behavior(behavior_type)
             except GenerationError:
                 repair_graph=True
                 raise
@@ -143,6 +156,8 @@ def build_scene(client, document, requests, *, folder, source_image_loader=None,
                 '\n实际工具计算结果：'+json.dumps(ledger,ensure_ascii=False)
             behavior=planning_client.generate(behavior_type,
                 '根据原文和已经编译的对象，规划连续演示，不修改对象、函数或来源。返回MathBehaviorDraft。'
+                +('此流程已经有逐字教材配音，禁止编写新的讲解。narration只填Schema的固定占位句；'
+                  '该句不进入配音或字幕，模型仅规划图形、参数、测量与核验。' if source_verbatim else '')+
                 'operations为三至十步，每步changes使用Schema中已有控制参数，至少两步实际运动。'
                 '口播解释真实变化、原因和限制，不写数字或等号；具体数值由测量工具计算并播报。'
                 'measurements使用类型化MeasuredSum：terms为工具项数组，divisor可为分母数组，absolute可取绝对值。'
@@ -218,8 +233,14 @@ def enrich_constructions(lesson,document,client,requests,*,folder,pdf_path,progr
         selected=SourceDocument(filename=document.filename,pages=[p for p in document.pages if p.page in pages])
         try:
             from zhijiang.construction_intent import read_construction_intent
-            intent=read_construction_intent(planning_client or client,selected,members,Path(folder)/f'group-{n:03d}')
-            if intent.relation_kind in {'symbolic_sequence','concept_comparison'}:
+            # The literal-source planner already selects a typed visual tool.
+            # Keep a single tool decision, then apply all actual construction,
+            # geometry, calculation and source-review gates below.
+            explicit_source_tool=all(item.get('visual_medium')=='computed' for item in members) and bool(
+                lesson.segments[members[0]['segment_id']-1].source_spans)
+            intent=None if explicit_source_tool else read_construction_intent(
+                planning_client or client,selected,members,Path(folder)/f'group-{n:03d}')
+            if intent and intent.relation_kind in {'symbolic_sequence','concept_comparison'}:
                 lesson.animation_report.setdefault('construction_routing',[]).append({
                     'segment_ids':[item['segment_id'] for item in members],
                     'relation_kind':intent.relation_kind,'observation':intent.observation,
@@ -227,7 +248,8 @@ def enrich_constructions(lesson,document,client,requests,*,folder,pdf_path,progr
                 continue
             scene=build_scene(client,selected,members,folder=Path(folder)/f'group-{n:03d}',
                               source_image_loader=lambda p:page_preview(data,p),
-                              planning_client=planning_client,review_client=review_client)
+                              planning_client=planning_client,review_client=review_client,
+                              source_verbatim=bool(lesson.segments[members[0]['segment_id']-1].source_spans))
         except GenerationError as exc:
             warnings.append({'stage':'construction','segment_id':members[0]['segment_id'],'message':str(exc)});continue
         segment=lesson.segments[members[0]['segment_id']-1]

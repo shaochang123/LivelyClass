@@ -7,6 +7,40 @@ from zhijiang.models import PageText, SourceDocument
 from zhijiang.automatic_construction import build_scene, enrich_constructions
 
 
+def test_source_timing_schema_prevents_alternative_speech_without_relaxing_math_tools():
+    from zhijiang.automatic_construction import source_timing_behavior
+    from zhijiang.math_behavior import behavior_schema,decode_behavior
+    from zhijiang.math_construction import MathConstructionDraft
+    from pydantic import ValidationError
+    graph=MathConstructionDraft(title='点的连续变化',objective='观察点沿坐标的连续变化。',source_id=1,
+        parameters={'t':1},constructions=[{'id':'o','op':'point','expr':['0','0']},
+            {'id':'p','op':'point','expr':['t','1']}])
+    schema=source_timing_behavior(behavior_schema(graph,{1:{}}))
+    data={'operations':[{'changes':{'t':t},'measurements':{'横坐标':{'terms':[{'kind':'xcoord','point':'p'}]}}}
+        for t in (1,1.5,2)],'claims':[{'source_id':1,'left':{'terms':[{'kind':'ycoord','point':'p'}]},
+            'right':{'terms':[{'kind':'scalar','expr':'1'}]}}]}
+    draft=schema.model_validate(data)
+    operations,claims=decode_behavior(draft)
+    assert all(op.narration=='观察当前对象与参数的变化，具体测量以画面为准。' for op in operations)
+    assert operations[-1].changes['t']==2 and claims
+    data['operations'][0]['narration']='模型另写的口播不允许进入这个流程。'
+    with pytest.raises(ValidationError):schema.model_validate(data)
+    del data['operations'][0]['narration']
+    data['operations'][0]['measurements']['横坐标']['terms'][0]['point']='not_an_object'
+    with pytest.raises(ValidationError):schema.model_validate(data)
+
+
+def test_curve_reference_type_error_keeps_real_object_id_for_bounded_repair():
+    from zhijiang.math_construction import Compiler,MathConstructionDraft,ConstructionObjectError
+    graph=MathConstructionDraft(title='曲线上的点',objective='保持函数图像与点的真实类型对应。',source_id=1,
+        parameters={'u':.2},constructions=[{'id':'f','op':'function','expr':['sin(x)']},
+            {'id':'p','op':'point_on_curve','refs':['f'],'expr':['u']}])
+    with pytest.raises(ConstructionObjectError,match='point_on_function') as error:Compiler(graph)
+    assert error.value.object_id=='p'
+    fixed=graph.model_copy(deep=True);fixed.constructions[1].op='point_on_function'
+    assert Compiler(fixed).items['p']['type']=='point'
+
+
 def source():
     return SourceDocument(filename='unseen.pdf',pages=[PageText(page=7,
         text='A varying input is mapped to the sine of that input. The point lies on the sine curve.')])
