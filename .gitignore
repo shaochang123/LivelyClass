@@ -1,3 +1,6 @@
+# Operating system metadata
+.DS_Store
+
 # Local environments and Python/test caches
 .venv*/
 venv/
@@ -50,6 +53,7 @@ service-account*.json
 /dist/
 /build/
 /demo/
+/media/
 /submission/
 /docs/images/
 uploads/

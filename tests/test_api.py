@@ -181,8 +181,9 @@ def test_upload_guards_and_error_messages(tmp_path, sample_pdf):
         assert upload(sample_pdf, rights_confirmed="true", mode="ai").status_code == 400
         assert upload(sample_pdf, rights_confirmed="true", voice_mode="ai").status_code == 400
         assert client.get("/api/jobs/notfound").status_code == 404
-        assert client.get("/").status_code == 200
-        assert "确定性演示模式" in client.get("/").text
+        page = client.get("/")
+        assert page.status_code == 200
+        assert 'id="workspace"' in page.text
 
 
 def test_remote_consent_and_running_delete_guard(tmp_path, sample_pdf):

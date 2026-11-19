@@ -103,12 +103,12 @@ def test_browser_save_publication_and_archival(tmp_path, sample_pdf):
         # Old read-only job links still behave as before. New archive creation is browser-bound.
         assert visitor.get(job_url).status_code == 200
         assert visitor.post(f"{job_url}/save").status_code == 404
-        competitor = {"username": "另一位用户", "password": "another password"}
+        competitor = {"username": "另一位用户", "password": "example-competitor-password"}
         assert visitor.post("/api/auth/register", json=competitor).status_code == 200
         assert visitor.post(f"{job_url}/publish").status_code == 404
         assert visitor.post("/api/auth/logout").json() == {"user": None}
 
-        credentials = {"username": "测试讲师", "password": "test only passphrase"}
+        credentials = {"username": "测试讲师", "password": "example-instructor-password"}
         auth = owner.post("/api/auth/register", json=credentials)
         assert auth.json() == {"user": {"username": credentials["username"]}}
         assert SESSION_COOKIE in auth.headers["set-cookie"]

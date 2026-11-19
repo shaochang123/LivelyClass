@@ -660,9 +660,12 @@
     password.name = "password";
     password.type = "password";
     password.required = true;
-    password.autocomplete = registering ? "new-password" : "current-password";
+    password.autocomplete = "current-password";
     password.maxLength = 128;
-    if (registering) password.minLength = 8;
+    if (registering) {
+      password.autocomplete = "new-password";
+      password.minLength = 8;
+    }
     passwordLabel.append(password);
     const submit = element("button", "course-primary", registering ? "注册" : "登录");
     submit.type = "submit";
