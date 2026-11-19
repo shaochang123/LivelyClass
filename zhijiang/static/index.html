@@ -7,12 +7,12 @@
   <title>Lively Class——AI教育Agent · 从 PDF 到一节课</title>
   <link rel="icon" href="/static/favicon.svg?v=20261021" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css?v=20261119">
-  <link rel="stylesheet" href="/static/screens.css?v=20261119-models">
-  <link rel="stylesheet" href="/static/courses.css?v=20261119">
+  <link rel="stylesheet" href="/static/screens.css?v=20261119-chat">
+  <link rel="stylesheet" href="/static/courses.css?v=20261119-accounts">
   <style>[hidden]{display:none!important}</style>
-  <script src="/static/screens.js?v=20261119-scroll" defer></script>
-  <script src="/static/app.js?v=20261119-models" defer></script>
-  <script src="/static/courses.js?v=20261119" defer></script>
+  <script src="/static/screens.js?v=20261119-chat-scroll" defer></script>
+  <script src="/static/app.js?v=20261119-accounts" defer></script>
+  <script src="/static/courses.js?v=20261119-accounts" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace">跳到课程工作台</a>
@@ -64,40 +64,44 @@
             </div>
             <h2 id="workspace-title" tabindex="-1">开始你的课程创作</h2>
           </div>
-          <form id="upload-form" class="control-panel">
+          <section id="job-section" class="screen-scroll course-conversation" data-scroll-lock hidden aria-labelledby="job-title" tabindex="0">
+            <h2 id="job-title" class="sr-only" tabindex="-1">课程对话</h2>
+            <div id="conversation-turns"></div>
+          </section>
+          <form id="upload-form" class="control-panel" data-scroll-lock novalidate>
             <div class="composer">
               <label class="sr-only" for="custom-prompt">PPT编排要求</label>
-              <textarea id="custom-prompt" name="custom_prompt" rows="3" maxlength="4000" placeholder="面向谁学习？PPT如何组织？希望什么画风？原文字幕与配音保持完整。"></textarea>
+              <textarea id="custom-prompt" name="custom_prompt" rows="3" maxlength="4000" placeholder="今天想学点什么？"></textarea>
               <div class="composer-toolbar">
                 <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="选择 PDF 文件" aria-describedby="pdf-limits">
                   <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7V5a2 2 0 0 1 2-2h6l5 5v11a2 2 0 0 1-2 2H8a3 3 0 0 1-3-3v-4m8-11v5h5m-6 9v-5m-2.5 2.5h5"/></svg>
                   <strong id="file-label">添加 PDF</strong>
                   <span id="pdf-limits" class="sr-only">文字版 / 扫描版 PDF</span>
-                  <input id="pdf-file" name="file" type="file" accept=".pdf,application/pdf" tabindex="-1" aria-label="上传 PDF" required>
+                  <input id="pdf-file" name="file" type="file" accept=".pdf,application/pdf" tabindex="-1" aria-label="上传 PDF">
                 </div>
+                <button id="remove-file" class="attachment-remove" type="button" aria-label="移除附件" hidden>×</button>
                 <div class="composer-tools">
                   <button type="button" class="composer-tool" data-settings="model">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15m-15 5h15m-15 5h15"/><rect x="6" y="5" width="4" height="4" rx="1" fill="white"/><rect x="13" y="10" width="4" height="4" rx="1" fill="white"/><rect x="8" y="15" width="4" height="4" rx="1" fill="white"/></svg>
-                    模型配置
+                    课程设置
                   </button>
-                  <button type="button" class="composer-tool" data-settings="generation">生成设置</button>
-                  <button id="submit-button" class="primary-button" type="submit">生成一节课 <span aria-hidden="true">↗</span></button>
+                  <button id="submit-button" class="primary-button" type="submit" disabled><span id="submit-label">生成一节课</span><span aria-hidden="true">↑</span></button>
                 </div>
               </div>
             </div>
             <div class="consents">
-              <label><input id="rights-confirmed" type="checkbox" required><span>我拥有这份资料的使用权</span></label>
+              <label id="rights-row"><input id="rights-confirmed" type="checkbox" required><span>我拥有这份资料的使用权</span></label>
               <label id="remote-consent-row" hidden><input id="remote-consent" type="checkbox"><span>同意将所需内容发送至所选外部服务</span></label>
             </div>
             <div class="composer-status">
               <p id="submit-error" role="alert" hidden></p>
-              <button id="view-job" class="text-button" type="button" hidden>查看当前任务 ↗</button>
             </div>
             <dialog id="workspace-settings" class="settings-dialog" aria-labelledby="settings-title">
               <header class="settings-header">
                 <h3 id="settings-title">课程设置</h3>
                 <button id="close-settings" type="button" class="dialog-dismiss" aria-label="关闭设置">×</button>
               </header>
+              <p id="revision-settings-note" hidden>本轮沿用上一版的课程设置，可更新服务密钥。</p>
               <div class="settings-tabs" aria-label="设置类别">
                 <button type="button" data-settings-tab="model" aria-controls="model-panel" aria-pressed="true">模型配置</button>
                 <button type="button" data-settings-tab="generation" aria-controls="generation-panel" aria-pressed="false">生成设置</button>
@@ -124,7 +128,7 @@
                         <span id="planning-help" class="model-tooltip" role="tooltip">规划数学推演的图形构造、操作和演示步骤。</span>
                       </span>
                     </div>
-                    <input id="llm-math-model" name="llm_math_model" type="text" maxlength="120" placeholder="留空使用生成模型">
+                    <input id="llm-math-model" name="llm_math_model" type="text" maxlength="120">
                     <div class="model-field-heading">
                       <label for="llm-review-model">复核模型<span class="optional-label">（可选）</span></label>
                       <span class="model-help">
@@ -132,7 +136,7 @@
                         <span id="review-help" class="model-tooltip" role="tooltip">对照教材，检查数学推演的来源、文字和画面表达。</span>
                       </span>
                     </div>
-                    <input id="llm-review-model" name="llm_review_model" type="text" maxlength="120" placeholder="留空使用生成模型">
+                    <input id="llm-review-model" name="llm_review_model" type="text" maxlength="120">
                     <label for="llm-api-key">API 密钥</label>
                     <input id="llm-api-key" name="llm_api_key" type="password" autocomplete="off" placeholder="本机 Ollama 可留空">
                     <div class="credential-controls"><label><input id="remember-llm-key" type="checkbox" checked>在本机记住密钥</label><button id="clear-llm-key" class="text-button" type="button" hidden>清除保存</button></div>
@@ -200,42 +204,7 @@
               <div class="settings-footer"><button id="done-settings" class="primary-button" type="button">完成</button></div>
             </dialog>
           </form>
-          <section id="job-section" class="results" hidden aria-labelledby="job-title">
-              <div class="section-heading"><h2 id="job-title" tabindex="-1">生成结果</h2><div class="job-actions"><button id="edit-job" class="text-button" type="button">返回编辑</button><button id="retry-button" class="text-button" type="button" hidden>重新生成</button><button id="delete-button" class="text-button" type="button" hidden>删除任务</button></div></div>
-              <div class="job-card" aria-live="polite"><div class="job-status-row"><span id="job-badge" class="status-badge">排队中</span><span id="job-filename" class="filename"></span></div><h3 id="job-stage">等待处理</h3><div class="progress-track"><div id="job-progress" class="progress-fill"></div></div><p id="job-message"></p></div>
-              <div id="lesson-result" hidden>
-                <div id="course-result-actions" class="course-result-actions">
-                  <button id="save-course" class="primary-button" type="button" hidden>
-                    <svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-7-4-7 4z"/></svg>保存到我的课程
-                  </button>
-                  <button id="share-course" class="composer-tool" type="button" hidden>
-                    <svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10 17 5m-10 9 10 5"/><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="4" r="2.5"/><circle cx="19" cy="20" r="2.5"/></svg>分享到社区
-                  </button>
-                </div>
-                <div class="result-grid">
-                  <div class="video-card">
-                    <div class="card-heading"><h3>教学视频</h3><a id="download-video" href="#" download="LivelyClass-lesson.mp4">下载 MP4 ↗</a></div>
-                    <video id="lesson-video" controls preload="metadata" playsinline></video>
-                    <p id="voice-note" class="result-note"></p>
-                    <div id="presentation-export" class="presentation-export" hidden><strong>PPT 课件</strong><a id="download-presentation" href="#" download="LivelyClass-lesson.pptx">下载 PPTX ↗</a></div>
-                    <div id="source-exports" class="presentation-export" hidden><strong>原文与字幕</strong><a id="download-subtitles" href="#">SRT字幕 ↗</a><a id="download-transcript" href="#">教材全文 ↗</a><a id="download-coverage" href="#">逐页核对 ↗</a></div>
-                  </div>
-                  <div class="overview-card"><h3 id="lesson-title"></h3><p id="lesson-objective"></p><p id="ppt-template-result" class="result-note"></p><p id="source-route-result" class="result-note"></p><div class="overview-meta"><span id="segment-count"></span><span id="generation-mode"></span></div></div>
-                </div>
-                <details class="generation-records">
-                  <summary>生成记录</summary>
-                  <div id="lesson-notice"></div><div id="math-report" hidden></div>
-                  <a id="download-math-scenes" class="text-button" href="#" hidden>下载场景数据 ↗</a>
-                </details>
-                <section id="learning-plan-result" class="overview-card" hidden>
-                  <div class="card-heading"><h3>你的学习计划</h3><a id="download-learning-plan" href="#">下载学习计划 ↗</a></div>
-                  <p id="learning-plan-overview"></p><p id="learning-plan-time" class="result-note"></p>
-                  <div id="learning-plan-sessions"></div>
-                </section>
-                <div class="script-heading"><h3>逐段讲稿与来源</h3></div>
-                <div id="segments" class="segments"></div>
-              </div>
-          </section>
+
         </div>
       </section>
       <section id="my-courses" class="screen collection-screen" aria-labelledby="my-courses-title" hidden>
@@ -250,6 +219,43 @@
           <div id="community-course-list"></div>
         </div>
       </section>
+      <template id="conversation-turn-template">
+        <article class="conversation-turn">
+          <div class="conversation-user">
+            <span class="user-attachment" hidden>
+              <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2.5h5l4 4V17H6zM11 2.5v5h4M8 11h5m-5 3h5" stroke-linejoin="round"/></svg>
+              <span></span>
+            </span>
+            <p class="user-message"></p>
+          </div>
+          <div class="conversation-reply">
+            <div class="conversation-status">
+              <svg class="generation-book" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 13c6-1.8 11-.3 16 3.2 5-3.5 10-5 16-3.2v20.5c-5-1.5-11-.7-16 2.9-5-3.6-11-4.4-16-2.9V13Z" fill="white"/>
+                <path d="M22 16v20m-12-17c3-.2 6 .5 8 2m-8 3c3-.2 6 .5 8 2m8-5c2-1.5 5-2.2 8-2m-8 7c2-1.5 5-2.2 8-2"/>
+                <path class="generation-page" d="M22 16c3-5.5 6.9-7.9 12-8v20c-4.7 0-9.6 3.6-12 8z" fill="#e2edff"/>
+                <path class="generation-spark" d="m38 3 1 2.8L42 7l-3 1.2-1 2.8-1-2.8L34 7l3-1.2L38 3Z" fill="#e2edff"/>
+              </svg>
+              <p class="conversation-stage" role="status" aria-atomic="true"></p>
+              <button class="text-button conversation-retry" type="button" hidden>重试</button>
+            </div>
+            <div class="conversation-preview" hidden>
+              <h3 class="conversation-lesson-title"></h3>
+              <video class="conversation-video" controls preload="none" playsinline></video>
+              <h4>逐段讲稿与来源</h4>
+              <div class="segments"></div>
+            </div>
+          </div>
+        </article>
+      </template>
+      <div id="course-result-actions" class="course-result-actions" hidden>
+        <button id="save-course" class="primary-button" type="button" hidden>
+          <svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-7-4-7 4z"/></svg>保存到我的课程
+        </button>
+        <button id="share-course" class="composer-tool" type="button" hidden>
+          <svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10 17 5m-10 9 10 5"/><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="4" r="2.5"/><circle cx="19" cy="20" r="2.5"/></svg>分享到共享社区
+        </button>
+      </div>
     </main>
   </div>
 </body>

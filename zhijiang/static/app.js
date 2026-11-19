@@ -4,6 +4,10 @@ const fileInput = $("#pdf-file");
 const dropzone = $("#dropzone");
 const settingsDialog = $("#workspace-settings");
 const composer = $(".composer");
+const promptInput = $("#custom-prompt");
+const conversation = $("#job-section");
+const turnList = $("#conversation-turns");
+const resultActions = $("#course-result-actions");
 let reportingInvalid = false;
 
 function showSettings(category) {
@@ -12,7 +16,20 @@ function showSettings(category) {
     $(`[data-settings-tab="${name}"]`).setAttribute("aria-pressed", String(name === category));
   }
   $(".settings-content").scrollTop = 0;
-  if (!settingsDialog.open) settingsDialog.showModal();
+  if (!settingsDialog.open) {
+    const revising = Boolean(latestSuccess && !fileInput.files.length);
+    if (revising) restoreSettings(latestSuccess.job);
+    $("#revision-settings-note").hidden = !revising;
+    for (const field of settingsDialog.querySelectorAll("input, select, textarea")) {
+      if (field.id.endsWith("-api-key") || field.id.startsWith("remember-")) continue;
+      // Some controls are disabled independently (for example by media protocol).
+      if (revising && !field.disabled) {
+        field.disabled = true;
+        field.dataset.revisionLocked = "";
+      }
+    }
+    settingsDialog.showModal();
+  }
 }
 
 for (const button of document.querySelectorAll("[data-settings], [data-settings-tab]")) {
@@ -24,6 +41,13 @@ for (const selector of ["#close-settings", "#done-settings"]) {
 for (const button of settingsDialog.querySelectorAll(".model-help button")) {
   button.addEventListener("click", () => button.focus({preventScroll: true}));
 }
+settingsDialog.addEventListener("close", () => {
+  for (const field of settingsDialog.querySelectorAll("[data-revision-locked]")) {
+    field.disabled = false;
+    delete field.dataset.revisionLocked;
+  }
+  updateConsent();
+});
 settingsDialog.addEventListener("keydown", event => {
   if (event.key === "Enter" && event.target.matches('input:not([type="checkbox"]):not([type="radio"])')) {
     event.preventDefault();
@@ -44,10 +68,14 @@ form.addEventListener("invalid", (event) => {
     if (parent.tagName === "DETAILS") parent.open = true;
   }
 }, true);
-const representationNames = {geometry: "可计算几何", process: "过程图", relationship: "关系图", comparison: "对比图", source_figure: "原文图示讲解"};
 const linkedJobId = new URLSearchParams(window.location.search).get("job") || "";
-let currentJobId = /^[0-9a-f]{32}$/.test(linkedJobId) ? linkedJobId : localStorage.getItem("zhijiang-job-id");
-let jobViewActive = Boolean(currentJobId);
+const initialJobId = /^[0-9a-f]{32}$/.test(linkedJobId) ? linkedJobId : localStorage.getItem("zhijiang-job-id");
+let currentTurn = null;
+let latestSuccess = null;
+let busy = false;
+let conversationVersion = 0;
+const stageNames = {queued: "等待处理", running: "生成中", completed: "正在读取课程"};
+const serviceKeyNames = ["llm_api_key", "tts_api_key", "image_api_key", "video_api_key"];
 let pollTimer = null;
 let config = null;
 let activeProvider = $("#llm-provider").value;
@@ -68,21 +96,68 @@ function showSubmitError(message) {
   status.hidden = !message;
 }
 
-function showJobView(active, focus = false) {
-  jobViewActive = active;
-  form.hidden = active;
-  $("#workspace-intro").hidden = active;
-  $("#job-section").hidden = !active;
-  $("#view-job").hidden = active || !currentJobId;
-  if (!active) $("#lesson-video").pause();
-  if (focus) {
-    $(".workspace-main").scrollTop = 0;
-    $(active ? "#job-title" : "#workspace-title").focus({preventScroll: true});
+function updateComposer() {
+  const hasFile = Boolean(fileInput.files.length);
+  const revising = !hasFile && Boolean(latestSuccess || (currentTurn && busy));
+  const showsConversation = Boolean(turnList.childElementCount);
+  $(".workspace-main").classList.toggle("has-conversation", showsConversation);
+  $("#workspace-intro").hidden = showsConversation;
+  conversation.hidden = !showsConversation;
+  $("#rights-row").hidden = Boolean(revising);
+  $("#rights-confirmed").required = !revising;
+  $("#remote-consent-row").hidden = Boolean(revising) || !$("#remote-consent").required;
+  promptInput.placeholder = revising ? "想怎么调整这节课？" : "今天想学点什么？";
+  $("#submit-label").textContent = revising ? "发送" : "生成一节课";
+  $("#submit-button").disabled = !config?.default_narration_mode || busy ||
+    (revising ? !promptInput.value.trim() : !hasFile);
+  for (const retry of turnList.querySelectorAll('[data-state="failed"] .conversation-retry')) {
+    retry.disabled = busy;
   }
 }
 
-$("#edit-job").addEventListener("click", () => showJobView(false, true));
-$("#view-job").addEventListener("click", () => showJobView(true, true));
+function atConversationEnd() {
+  return conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop < 75;
+}
+
+function followConversation(shouldFollow) {
+  if (shouldFollow) conversation.scrollTop = conversation.scrollHeight;
+}
+
+function updateResultActions() {
+  const result = busy ? null : latestSuccess;
+  resultActions.hidden = !result;
+  if (result) result.view.querySelector(".conversation-preview").append(resultActions);
+  window.LivelyCourses?.setJob(result?.job || null, result?.lesson);
+}
+
+function setBusy(value) {
+  busy = value;
+  updateComposer();
+  updateResultActions();
+}
+
+function clearConversation() {
+  ++conversationVersion;
+  clearTimeout(pollTimer);
+  currentTurn = null;
+  latestSuccess = null;
+  turnList.querySelectorAll("video").forEach(video => video.pause());
+  turnList.replaceChildren();
+  promptInput.value = "";
+  fileInput.value = "";
+  $("#rights-confirmed").checked = false;
+  try { localStorage.removeItem("zhijiang-job-id"); } catch { /* Browser storage is unavailable. */ }
+  const url = new URL(location.href);
+  if (url.searchParams.has("job")) {
+    url.searchParams.delete("job");
+    history.replaceState(history.state, "", url);
+  }
+  showSubmitError("");
+  syncAttachment();
+  setBusy(false);
+}
+
+window.LivelyWorkspace = {clearConversation};
 
 function appendDirectorOptions(body) {
   body.append("style_mode", "subject");
@@ -96,11 +171,12 @@ function appendDirectorOptions(body) {
   }
 }
 
-function appendModelOptions(body) {
+function appendModelOptions(body, prompt) {
   body.append("mode", "ai");
-  for (const name of ["llm_provider", "llm_base_url", "llm_model", "llm_math_model", "llm_review_model", "llm_api_key", "custom_prompt"]) {
+  for (const name of ["llm_provider", "llm_base_url", "llm_model", "llm_math_model", "llm_review_model", "llm_api_key"]) {
     body.append(name, form.elements[name].value);
   }
+  body.append("custom_prompt", prompt);
 }
 
 async function getJSON(url, options = {}) {
@@ -314,14 +390,27 @@ function updateConsent() {
   $("#tts-api-key").placeholder = hasCredential("tts") ? "已保存，留空即可使用" : localVoice ? "本机服务可留空" : "填写 API 密钥";
   $("#tts-ready-label").textContent = $("#tts-voice").value;
   updateSpeechPreview();
+  updateComposer();
 }
 
-function setFile(file) {
+function syncAttachment() {
+  const file = fileInput.files[0];
+  $("#file-label").textContent = file?.name || "添加 PDF";
+  $("#remove-file").hidden = !file;
+  updateComposer();
+}
+
+function acceptFile(file) {
   if (!file) return;
-  const transfer = new DataTransfer();
-  transfer.items.add(file);
-  fileInput.files = transfer.files;
-  $("#file-label").textContent = file.name;
+  const isPDF = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+  const tooLarge = config?.max_pdf_bytes && file.size > config.max_pdf_bytes;
+  if (!isPDF || tooLarge) {
+    showSubmitError(isPDF ? `PDF 超过 ${Math.round(config.max_pdf_bytes / 1024 / 1024)} MB` : "请选择 PDF 文件");
+    return false;
+  }
+  $("#rights-confirmed").checked = false;
+  showSubmitError("");
+  return true;
 }
 
 dropzone.addEventListener("keydown", (event) => {
@@ -333,6 +422,7 @@ dropzone.addEventListener("keydown", (event) => {
 composer.addEventListener("dragover", (event) => {
   if (!event.dataTransfer.types.includes("Files")) return;
   event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
   composer.classList.add("dragover");
 });
 composer.addEventListener("dragleave", event => {
@@ -342,10 +432,33 @@ composer.addEventListener("drop", (event) => {
   if (!event.dataTransfer.types.includes("Files")) return;
   event.preventDefault();
   composer.classList.remove("dragover");
-  if (event.dataTransfer.files.length) setFile(event.dataTransfer.files[0]);
+  const file = event.dataTransfer.files[0];
+  if (!acceptFile(file)) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  fileInput.files = transfer.files;
+  syncAttachment();
 });
 fileInput.addEventListener("change", () => {
-  $("#file-label").textContent = fileInput.files[0]?.name || "添加 PDF";
+  if (!acceptFile(fileInput.files[0])) fileInput.value = "";
+  syncAttachment();
+});
+$("#remove-file").addEventListener("click", () => {
+  fileInput.value = "";
+  showSubmitError("");
+  syncAttachment();
+  if (latestSuccess) {
+    shownSettingsJobId = null;
+    restoreSettings(latestSuccess.job);
+  }
+  dropzone.focus();
+});
+promptInput.addEventListener("input", updateComposer);
+promptInput.addEventListener("keydown", event => {
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.isComposing) {
+    event.preventDefault();
+    if (!$("#submit-button").disabled) form.requestSubmit();
+  }
 });
 form.querySelectorAll('input[name="voice_mode"]').forEach(input => input.addEventListener("change", () => {
   voiceSelectionEdited = true;
@@ -402,6 +515,9 @@ for (const kind of ["llm", "tts"]) {
   $(`#remember-${kind}-key`).addEventListener("change", () => { rememberServiceFields(); saveCredential(kind); });
   $(`#clear-${kind}-key`).addEventListener("click", async () => {
     const profile = credentialProfile(kind); if (!profile) return;
+    for (const turn of [currentTurn, latestSuccess]) {
+      if (turn?.keys && sameService(turn.job, kind)) delete turn.keys[`${kind}_api_key`];
+    }
     clearTimeout(credentialTimers[kind]); $(`#${kind}-api-key`).value = "";
     try { await credentialWrites[kind].catch(() => {});
       await getJSON(`/api/credentials?${new URLSearchParams(profile)}`, {method:"DELETE"});
@@ -425,11 +541,18 @@ $("#speech-preview-audio").addEventListener("error", () => {
   $("#speech-preview-status").textContent = "试听暂不可用，请检查对应语音服务";
 });
 
-function showJob(job) {
+function restoreSettings(job) {
   if (shownSettingsJobId !== job.id) {
     shownSettingsJobId = job.id;
+    for (const name of serviceKeyNames) {
+      const kind = name.slice(0, -"_api_key".length);
+      if (!sameService(job, kind)) {
+        clearTimeout(credentialTimers[kind]);
+        form.elements[name].value = "";
+      }
+    }
     const voiceChoice = form.querySelector(`input[name="voice_mode"][value="${job.voice_mode}"]`);
-    if (voiceChoice && !voiceSelectionEdited) voiceChoice.checked = true;
+    if (voiceChoice && (!voiceSelectionEdited || latestSuccess?.job.id === job.id)) voiceChoice.checked = true;
     // A delayed restore of the previous job must not replace a new choice.
     for (const kind of ["image","video"]) {
       const media = job.model_settings?.art?.[kind];
@@ -449,7 +572,6 @@ function showJob(job) {
       $("#llm-model").value = job.model_settings.model || "";
       $("#llm-review-model").value = job.model_settings.review_model || "";
       $("#llm-math-model").value = job.model_settings.math_model || "";
-      $("#custom-prompt").value = job.model_settings.prompt || "";
     }
     if (job.voice_mode === "ai" && job.voice_settings) {
       $("#tts-base-url").value = job.voice_settings.base_url || "";
@@ -459,26 +581,11 @@ function showJob(job) {
     updateConsent();
     rememberServiceFields();
     refreshCredential("llm"); refreshCredential("tts");
-    if (!$("#remote-consent-row").hidden) $("#remote-consent").checked = job.remote_consent;
+    $("#remote-consent").checked = job.remote_consent;
   }
-  showJobView(jobViewActive);
-  $("#job-filename").textContent = job.filename || "";
-  const badge = $("#job-badge");
-  const states = { queued: "排队中", running: "生成中", completed: "已完成", failed: "失败" };
-  badge.textContent = states[job.status] || job.status;
-  badge.className = `status-badge ${job.status}`;
-  const stages = { queued: "等待处理", completed: "生成完成", failed: "生成失败", interrupted: "服务中断" };
-  $("#job-stage").textContent = stages[job.stage] || job.stage || "等待处理";
-  $("#job-progress").style.width = `${job.progress || 0}%`;
-  $("#job-message").textContent = job.error || "";
-  $("#job-message").hidden = !job.error;
-  $("#presentation-export").hidden = !(job.status === "completed" && job.has_presentation);
-  $("#retry-button").hidden = job.status !== "failed";
-  $("#delete-button").hidden = !["completed", "failed"].includes(job.status);
-  window.LivelyCourses?.setJob(job);
 }
 
-function addSegment(segment, index) {
+function makeSegment(segment, index) {
   const details = document.createElement("details");
   details.className = "segment";
   if (index === 0) details.open = true;
@@ -501,136 +608,169 @@ function addSegment(segment, index) {
   quote.textContent = segment.evidence.quote;
   source.append(sourceHeading, quote);
   const scene = segment.math_scene || segment.visual_scene;
-  if (!scene || segment.source_spans?.length) body.append(narration);
-  if (scene) {
-    if (scene.diagram) {
-      const strategy = document.createElement("p");
-      strategy.textContent = `教学表达：${representationNames[scene.diagram.representation] || scene.diagram.representation}。${scene.diagram.rationale}`;
-      body.append(strategy);
-      if (scene.diagram.relations.length) {
-        const graph = document.createElement("details");
-        const heading = document.createElement("summary");
-        heading.textContent = "知识关系与来源";
-        graph.append(heading);
-        const nodes = new Map(scene.diagram.nodes.map(node => [node.id, node.label]));
-        scene.diagram.relations.forEach(edge => {
-          const triple = document.createElement("p");
-          triple.textContent = `${nodes.get(edge.source)} ${edge.directed ? "→" : "—"} ${edge.label} ${edge.directed ? "→" : "—"} ${nodes.get(edge.target)}（PDF 第 ${segment.evidence.page} 页）`;
-          const statements = document.createElement("p");
-          statements.textContent = (edge.source_statements || []).join(" ");
-          graph.append(triple, statements);
-        });
-        body.append(graph);
-      }
-    }
+  if (segment.source_spans?.length || !scene?.beats?.length) {
+    body.append(narration);
+  } else {
     const steps = document.createElement("ol");
-    (segment.source_spans?.length ? [] : scene.beats).forEach((beat) => {
+    for (const beat of scene.beats) {
       const item = document.createElement("li");
       item.textContent = beat.narration;
       steps.append(item);
-    });
+    }
     body.append(steps);
   }
   body.append(source);
   details.append(summary, body);
-  $("#segments").append(details);
+  return details;
 }
 
-async function showLesson(job) {
-  const jobId = job.id;
-  const lesson = await getJSON(`/api/jobs/${jobId}/lesson`);
-  if (jobId !== currentJobId) return;
-  $("#lesson-result").hidden = false;
-  $("#lesson-title").textContent = lesson.title;
-  $("#lesson-objective").textContent = lesson.objective;
-  $("#lesson-notice").replaceChildren();
-  for (const warning of lesson.animation_report?.warnings || []) {
-    const line = document.createElement("p");
-    line.textContent = `第 ${warning.segment_id} 段：${warning.message}`;
-    $("#lesson-notice").append(line);
+function addTurn(prompt, filename) {
+  const view = $("#conversation-turn-template").content.firstElementChild.cloneNode(true);
+  const message = view.querySelector(".user-message");
+  message.textContent = prompt;
+  message.hidden = !prompt;
+  const attachment = view.querySelector(".user-attachment");
+  attachment.querySelector("span").textContent = filename || "";
+  attachment.hidden = !filename;
+  const turn = {view, prompt, job: null, lesson: null, keys: null};
+  view.querySelector(".conversation-retry").addEventListener("click", () => retryTurn(turn));
+  turnList.append(view);
+  return turn;
+}
+
+function showStage(turn, message, state, retry = false) {
+  const status = turn.view.querySelector(".conversation-status");
+  status.hidden = false;
+  status.dataset.state = state;
+  const stage = status.querySelector(".conversation-stage");
+  if (stage.textContent !== message) stage.textContent = message;
+  const button = status.querySelector(".conversation-retry");
+  button.hidden = !retry;
+  button.disabled = busy && state === "failed";
+  button.textContent = state === "failed" ? "重新生成" : "重试读取";
+}
+
+function displayStage(job) {
+  return (stageNames[job.stage] || job.stage || "等待处理")
+    .replace(/（\s*\d+(?:\.\d+)?\s*秒[，,]\s*\d+\s*字）/g, "");
+}
+
+async function showLesson(turn) {
+  const {id} = turn.job;
+  const lesson = await getJSON(`/api/jobs/${id}/lesson`);
+  if (!turn.view.isConnected) return;
+  turn.lesson = lesson;
+  const preview = turn.view.querySelector(".conversation-preview");
+  preview.querySelector("h3").textContent = lesson.title;
+  const video = preview.querySelector("video");
+  video.setAttribute("aria-label", `${lesson.title} · 教学视频`);
+  if (turn === currentTurn) video.preload = "metadata";
+  video.src = `/api/jobs/${id}/video`;
+  preview.querySelector(".segments").replaceChildren(...lesson.segments.map(makeSegment));
+  turn.view.querySelector(".conversation-status").hidden = true;
+  preview.hidden = false;
+  if (!latestSuccess || (latestSuccess.view.compareDocumentPosition(turn.view) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+    latestSuccess = turn;
   }
-  if (!$("#lesson-notice").childElementCount) $("#lesson-notice").textContent = "无生成提示";
-  const template = config?.ppt_templates?.find(item => item.id === lesson.ppt_template);
-  const courseStyle = lesson.deck_plan?.course_style;
-  $("#ppt-template-result").textContent = courseStyle
-    ? `${courseStyle.format === "scene_drama" ? "场景漫剧" : courseStyle.mode === "comic" ? "漫剧讲解" : "学科自适应"}：${courseStyle.design.name} · ${courseStyle.design.subject}${lesson.deck_plan?.drama_production?.medium === "image" ? " · 插画分镜" : lesson.deck_plan?.drama_production?.medium === "video" ? " · 动态片段" : ""}`
-    : `PPT：${template?.name || "深色演示"}${lesson.deck_plan?.planner === "model_layout_selection" ? " · AI 规划页面版式" : lesson.deck_plan?.planner === "deterministic_demo_layout" ? " · 规则排版" : ""}`;
-  $("#segment-count").textContent = `${lesson.segments.length} 个讲解片段`;
-  $("#voice-note").textContent = lesson.voice_mode === "ai" ? "AI 配音" : "系统配音";
-  $("#generation-mode").textContent = lesson.mode === "ai" ? "AI 生成" : "规则生成";
-  const routing = lesson.deck_plan?.subject_routing;
-  const literal = lesson.deck_plan?.narration_mode === "source_verbatim";
-  const routedTemplate = config?.ppt_templates?.find(item => item.id === routing?.selection?.template_id);
-  const mediumNames = {svg:"SVG图解", computed:"连续图形演示", scene_drama:"场景漫剧", generated_illustration:"原创插画"};
-  const actualMedia = [...new Set(Object.values(lesson.deck_plan?.visual_story?.visuals || {}).map(v => mediumNames[v.executed_medium]).filter(Boolean))];
-  $("#source-route-result").textContent = [routing ? `已识别学科：${routing.classification.subject} · ${routedTemplate?.name || "课程模板"}` : "",
-    actualMedia.length ? `实际画面：${actualMedia.join("、")}` : ""].filter(Boolean).join("\n");
-  $("#source-exports").hidden = !literal;
-  $("#download-subtitles").href = `/api/jobs/${jobId}/subtitles`;
-  $("#download-transcript").href = `/api/jobs/${jobId}/transcript`;
-  $("#download-coverage").href = `/api/jobs/${jobId}/source-coverage`;
-  const studyPlan = lesson.deck_plan?.learning_plan;
-  $("#learning-plan-result").hidden = !studyPlan;
-  $("#learning-plan-sessions").replaceChildren();
-  if (studyPlan) {
-    $("#download-learning-plan").href = `/api/jobs/${jobId}/learning-plan`;
-    $("#learning-plan-overview").textContent = studyPlan.overview;
-    $("#learning-plan-time").textContent = `${studyPlan.sessions.length}天 · 每天${studyPlan.profile.minutes_per_day}分钟 · 共${studyPlan.total_minutes}分钟。${studyPlan.time_note || ""}`;
-    for (const session of studyPlan.sessions) {
-      const details = document.createElement("details"); details.className = "segment";
-      const title = document.createElement("summary"); title.textContent = `第${session.day}天 · ${session.title}（${session.minutes}分钟）`;
-      const content = document.createElement("div"); content.className = "segment-body";
-      const refs = document.createElement("p"); refs.textContent = `课程片段 ${session.segment_ids.join("、")} · PDF 第${session.source_pages.join("、")}页`;
-      const activities = document.createElement("ul");
-      for (const activity of session.activities) { const item = document.createElement("li"); item.textContent = activity; activities.append(item); }
-      const check = document.createElement("p"); check.textContent = `自测：${session.self_check}`;
-      content.append(refs, activities, check); details.append(title, content);
-      $("#learning-plan-sessions").append(details);
+}
+
+function revealReply(turn) {
+  const replyTop = turn.view.querySelector(".conversation-reply").getBoundingClientRect().top;
+  conversation.scrollTop += replyTop - conversation.getBoundingClientRect().top - 12;
+}
+
+function persistLatestJob(job) {
+  localStorage.setItem("zhijiang-job-id", job.id);
+  // From a shared ?job= entry, keep its reload link on the newest turn.
+  if (linkedJobId) {
+    const url = new URL(location.href);
+    url.searchParams.set("job", job.id);
+    history.replaceState(history.state, "", url);
+  }
+}
+
+function showJobStage(turn, job) {
+  turn.job = job;
+  if (job.status === "failed") {
+    showStage(turn, job.error || "生成失败，请重试", "failed", turn === currentTurn);
+  } else {
+    showStage(turn, displayStage(job), "running");
+  }
+}
+
+async function finishTurn(turn) {
+  if (turn.job.status === "completed") {
+    try {
+      await showLesson(turn);
+    } catch (error) {
+      showStage(turn, error.message, "unavailable", true);
     }
   }
-  $("#segments").replaceChildren();
-  lesson.segments.forEach(addSegment);
-  const videoURL = `/api/jobs/${jobId}/video`;
-  $("#lesson-video").src = videoURL;
-  $("#download-video").href = videoURL;
-  $("#download-presentation").href = `/api/jobs/${jobId}/presentation`;
-  const report = lesson.animation_report || {};
-  $("#math-report").hidden = !report.renderer;
-  $("#math-report").textContent = report.scene_count ?
-    `${report.scene_count} 个${report.scene_type === "general" ? "教学" : "数学推演"}场景 · ${report.renderer}` : report.reason || "基础图示";
-  $("#download-math-scenes").hidden = !report.scene_count;
-  $("#download-math-scenes").href = `/api/jobs/${jobId}/scenes`;
-  window.LivelyCourses?.setJob(job, lesson);
+  if (currentTurn === turn) setBusy(false);
 }
 
-async function refreshJob() {
-  const jobId = currentJobId;
-  if (!jobId) return;
+async function pollJob(turn) {
   try {
-    const job = await getJSON(`/api/jobs/${jobId}`);
-    if (jobId !== currentJobId) return;
-    showJob(job);
-    if (job.status === "completed") {
-      clearInterval(pollTimer); pollTimer = null;
-      await showLesson(job);
-    } else if (job.status === "failed") {
-      clearInterval(pollTimer); pollTimer = null;
-      $("#lesson-result").hidden = true;
-    }
+    const job = await getJSON(`/api/jobs/${turn.job.id}`);
+    if (currentTurn !== turn) return;
+    const follow = atConversationEnd();
+    showJobStage(turn, job);
+    if (job.status === "completed" || job.status === "failed") await finishTurn(turn);
+    else pollTimer = setTimeout(() => pollJob(turn), 1400);
+    if (currentTurn !== turn) return;
+    if (follow && turn.lesson && job.status === "completed") revealReply(turn);
+    else followConversation(follow);
   } catch (error) {
-    if (jobId !== currentJobId) return;
-    clearInterval(pollTimer); pollTimer = null;
-    if (error.message.includes("任务不存在")) {
-      currentJobId = null;
-      localStorage.removeItem("zhijiang-job-id");
-      showJobView(false);
-      window.LivelyCourses?.setJob(null);
-      return;
-    }
-    $("#job-message").textContent = error.message;
-    $("#job-message").hidden = false;
-    if (!jobViewActive) showSubmitError(error.message);
+    if (currentTurn !== turn) return;
+    // A brief connection failure does not end the server task.
+    showStage(turn, error.message, "unavailable", true);
   }
+}
+
+function startPolling(turn) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(() => pollJob(turn), 0);
+}
+
+async function restoreConversation(jobId) {
+  const version = conversationVersion;
+  const jobs = [];
+  const seen = new Set();
+  while (jobId && !seen.has(jobId)) {
+    seen.add(jobId);
+    try {
+      const job = await getJSON(`/api/jobs/${jobId}`);
+      if (version !== conversationVersion) return;
+      jobs.unshift(job);
+      jobId = job.parent_job_id;
+    } catch (error) {
+      if (version !== conversationVersion) return;
+      if (!error.message.includes("任务不存在")) showSubmitError(error.message);
+      else if (!jobs.length) localStorage.removeItem("zhijiang-job-id");
+      break;
+    }
+  }
+  if (!jobs.length) return;
+  restoreSettings(jobs.at(-1));
+  const turns = jobs.map(job => {
+    const turn = addTurn(job.model_settings?.prompt || "", job.parent_job_id ? "" : job.filename);
+    turn.job = job;
+    return turn;
+  });
+  currentTurn = turns.at(-1);
+  updateComposer();
+  for (const turn of turns) {
+    showJobStage(turn, turn.job);
+    if (turn.job.status === "completed") {
+      try { await showLesson(turn); }
+      catch (error) { showStage(turn, error.message, "unavailable", true); }
+      if (version !== conversationVersion) return;
+    }
+  }
+  if (currentTurn.lesson) revealReply(currentTurn);
+  else followConversation(true);
+  if (["queued", "running"].includes(currentTurn.job.status)) startPolling(currentTurn);
+  else setBusy(false);
 }
 
 function appendSourceOptions(body) {
@@ -641,104 +781,147 @@ function appendSourceOptions(body) {
   }
 }
 
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  refreshJob();
-  pollTimer = setInterval(refreshJob, 1400);
+function initialOptions(prompt) {
+  const body = new FormData();
+  appendModelOptions(body, prompt);
+  body.append("voice_mode", selected("voice_mode"));
+  appendDirectorOptions(body);
+  appendSourceOptions(body);
+  body.append("remote_consent", String($("#remote-consent").checked));
+  if (selected("voice_mode") === "ai") {
+    for (const name of ["tts_base_url", "tts_model", "tts_voice", "tts_api_key"]) {
+      body.append(name, form.elements[name].value);
+    }
+  }
+  return body;
+}
+
+function sameService(job, kind) {
+  const saved = kind === "llm" ? job.model_settings : kind === "tts" ? job.voice_settings : job.model_settings?.art?.[kind];
+  const active = kind === "llm" || kind === "tts" ? credentialProfile(kind) : {
+    provider: form.elements[`${kind}_protocol`].value, base_url: form.elements[`${kind}_base_url`].value,
+  };
+  if (!active || !saved?.base_url) return false;
+  return (kind === "tts" || active.provider === (saved.provider || saved.protocol)) &&
+    active.base_url.trim().replace(/\/+$/, "") === saved.base_url.replace(/\/+$/, "");
+}
+
+function revisionOptions(prompt, turn) {
+  const body = new FormData();
+  if (prompt !== null) body.append("custom_prompt", prompt);
+  for (const name of serviceKeyNames) {
+    const kind = name.slice(0, -"_api_key".length);
+    const key = (sameService(turn.job, kind) && form.elements[name].value) || turn.keys?.[name];
+    if (key) body.append(name, key);
+  }
+  return body;
+}
+
+function submittedKeys(body) {
+  return Object.fromEntries(serviceKeyNames.map(name => [name, body.get(name) || ""]));
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (busy || $("#submit-button").disabled) return;
   showSubmitError("");
-  if (!form.reportValidity()) return;
-  const button = $("#submit-button");
-  button.disabled = true;
-  button.textContent = "正在提交…";
+  const file = fileInput.files[0];
+  const parent = file ? null : latestSuccess;
+  const prompt = promptInput.value.trim();
+  if (!parent && !form.reportValidity()) return;
+  if (parent && !prompt) return;
+  const earlierTurn = currentTurn;
+  const follow = !earlierTurn || atConversationEnd();
+  const turn = addTurn(prompt, file?.name);
+  currentTurn = turn;
+  setBusy(true);
+  showStage(turn, "正在提交", "running");
+  promptInput.value = "";
+  followConversation(follow);
   try {
     rememberServiceFields();
-    await Promise.all([saveCredential("llm"), saveCredential("tts")]);
-    const body = new FormData();
-    body.append("file", fileInput.files[0]);
-    appendModelOptions(body);
-    body.append("voice_mode", selected("voice_mode"));
-    appendDirectorOptions(body);
-    appendSourceOptions(body);
-    body.append("rights_confirmed", String($("#rights-confirmed").checked));
-    body.append("remote_consent", String($("#remote-consent").checked));
-    if (selected("voice_mode") === "ai") {
-      for (const name of ["tts_base_url", "tts_model", "tts_voice", "tts_api_key"]) {
-        body.append(name, form.elements[name].value);
-      }
+    const body = parent ? revisionOptions(prompt, parent) : initialOptions(prompt);
+    if (!parent) {
+      body.append("file", file);
+      body.append("rights_confirmed", String($("#rights-confirmed").checked));
     }
-    const job = await getJSON("/api/jobs", { method: "POST", body });
+    await Promise.all([saveCredential("llm"), saveCredential("tts")]);
+    if (currentTurn !== turn) return;
+    const job = await getJSON(parent ? `/api/jobs/${parent.job.id}/revise` : "/api/jobs", {method: "POST", body});
+    if (currentTurn !== turn) return;
+    turn.keys = submittedKeys(body);
+    turn.job = job;
     clearSubmittedKeys();
-    currentJobId = job.id;
-    localStorage.setItem("zhijiang-job-id", job.id);
-    $("#lesson-result").hidden = true;
-    showJobView(true, true);
-    showJob(job);
-    startPolling();
+    if (file && fileInput.files[0] === file) fileInput.value = "";
+    if (!parent) {
+      latestSuccess = null;
+      turnList.replaceChildren(turn.view);
+      followConversation(true);
+    }
+    if (earlierTurn) earlierTurn.view.querySelector(".conversation-retry").hidden = true;
+    syncAttachment();
+    persistLatestJob(job);
+    showJobStage(turn, job);
+    startPolling(turn);
   } catch (error) {
+    if (currentTurn !== turn) return;
+    turn.view.remove();
+    currentTurn = earlierTurn;
+    if (!promptInput.value) promptInput.value = prompt;
     showSubmitError(error.message);
-  } finally {
-    button.disabled = false;
-    button.innerHTML = '生成一节课 <span aria-hidden="true">↗</span>';
+    setBusy(false);
   }
 });
 
-$("#delete-button").addEventListener("click", async () => {
-  if (!currentJobId || !confirm("确定删除此任务的本地 PDF、课程、视频和 PPT 吗？")) return;
-  try {
-    await getJSON(`/api/jobs/${currentJobId}`, { method: "DELETE" });
-    clearInterval(pollTimer); pollTimer = null;
-    currentJobId = null;
-    localStorage.removeItem("zhijiang-job-id");
-    showJobView(false, true);
-    window.LivelyCourses?.setJob(null);
-    $("#lesson-result").hidden = true;
-    $("#lesson-video").removeAttribute("src");
-    $("#lesson-video").load();
-  } catch (error) { alert(error.message); }
-});
-
-$("#retry-button").addEventListener("click", async () => {
-  if (!currentJobId) return;
-  const button = $("#retry-button");
-  button.disabled = true;
-  try {
-    rememberServiceFields();
-    await Promise.all([saveCredential("llm"), saveCredential("tts")]);
-    const body = new FormData();
-    appendModelOptions(body);
-    body.append("voice_mode", selected("voice_mode"));
-    appendDirectorOptions(body);
-    appendSourceOptions(body);
-    body.append("remote_consent", String($("#remote-consent").checked));
-    body.append("replace_settings", "true");
-    if (selected("voice_mode") === "ai") {
-      for (const name of ["tts_base_url", "tts_model", "tts_voice", "tts_api_key"]) {
-        body.append(name, form.elements[name].value);
-      }
+async function retryTurn(turn) {
+  if (turn !== currentTurn) {
+    try {
+      await showLesson(turn);
+    } catch (error) {
+      showStage(turn, error.message, "unavailable", true);
+    } finally {
+      updateResultActions();
     }
-    const job = await getJSON(`/api/jobs/${currentJobId}/retry`, { method: "POST", body });
-    clearSubmittedKeys();
-    $("#lesson-result").hidden = true;
-    showJob(job);
-    startPolling();
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    button.disabled = false;
+    return;
   }
-});
+  if (turn.job.status !== "failed") {
+    showStage(turn, "正在读取课程", "running");
+    setBusy(true);
+    startPolling(turn);
+    return;
+  }
+  if (busy) return;
+  const isRevision = Boolean(turn.job.parent_job_id);
+  if (!isRevision) {
+    // Validate settings, without requiring an upload or replacing a pending draft.
+    for (const field of settingsDialog.querySelectorAll("input, select, textarea")) {
+      if (!field.reportValidity()) return;
+    }
+    if (!$("#remote-consent").reportValidity()) return;
+  }
+  setBusy(true);
+  try {
+    const body = isRevision ? revisionOptions(null, turn) : initialOptions(turn.prompt);
+    if (!isRevision) body.append("replace_settings", "true");
+    await Promise.all([saveCredential("llm"), saveCredential("tts")]);
+    if (currentTurn !== turn) return;
+    const job = await getJSON(`/api/jobs/${turn.job.id}/retry`, {method: "POST", body});
+    if (currentTurn !== turn) return;
+    turn.keys = submittedKeys(body);
+    clearSubmittedKeys();
+    showJobStage(turn, job);
+    startPolling(turn);
+  } catch (error) {
+    if (currentTurn !== turn) return;
+    showStage(turn, error.message, "failed", true);
+    setBusy(false);
+  }
+}
 
 (async function initialize() {
   try {
     config = await getJSON("/api/config");
     if (!config.default_narration_mode) {
-      $("#submit-button").disabled = true;
-      $("#retry-button").disabled = true;
-      $("#submit-button").textContent = "请重启服务以启用原文课程";
       showSubmitError("请重启课程服务后再生成。");
     }
     $("#pdf-limits").textContent = `文字版 / 扫描版 · ${Math.round(config.max_pdf_bytes / 1024 / 1024)} MB 以内`;
@@ -777,7 +960,12 @@ $("#retry-button").addEventListener("click", async () => {
     if (!config.ai_tts_ready) $("#tts-settings").open = true;
     updateConsent();
     refreshCredential("llm"); refreshCredential("tts");
-    if (currentJobId) startPolling();
+    if (initialJobId) {
+      setBusy(true);
+      await restoreConversation(initialJobId);
+      if (!currentTurn) setBusy(false);
+    }
+    updateComposer();
   } catch (error) {
     showSubmitError("配置读取失败，请刷新页面后重试。");
     $("#tts-ready-label").textContent = "配置读取失败";

@@ -184,6 +184,7 @@ def test_upload_guards_and_error_messages(tmp_path, sample_pdf):
         page = client.get("/")
         assert page.status_code == 200
         assert 'id="workspace"' in page.text
+        assert "确定性演示模式" not in page.text
 
 
 def test_remote_consent_and_running_delete_guard(tmp_path, sample_pdf):

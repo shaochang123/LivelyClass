@@ -32,6 +32,7 @@ SESSION_SECONDS = 30 * 24 * 60 * 60
 BROWSER_SECONDS = 365 * 24 * 60 * 60
 TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 IDENTIFIER = re.compile(r"[a-f0-9]{32}")
+PRIVATE_CACHE = {"Cache-Control": "private, no-store"}
 ASSETS = {
     "video": ("lesson.mp4", "video/mp4"),
     "presentation": ("lesson.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
@@ -201,6 +202,13 @@ class CourseLibrary:
                     salt BLOB NOT NULL,
                     password BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS account_saves (
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    course_id TEXT NOT NULL REFERENCES courses(id),
+                    saved_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, course_id)
+                );
+                CREATE INDEX IF NOT EXISTS account_saves_course ON account_saves(course_id);
                 CREATE TABLE IF NOT EXISTS sessions (
                     token BLOB PRIMARY KEY,
                     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -211,6 +219,11 @@ class CourseLibrary:
                     author_id INTEGER NOT NULL REFERENCES users(id),
                     published_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS publication_views (
+                    course_id TEXT NOT NULL REFERENCES publications(course_id),
+                    playback_id TEXT NOT NULL,
+                    PRIMARY KEY (course_id, playback_id)
+                ) WITHOUT ROWID;
             """)
 
     def _connect(self) -> sqlite3.Connection:
@@ -219,76 +232,131 @@ class CourseLibrary:
         db.execute("PRAGMA foreign_keys=ON")
         return db
 
-    def _archive(self, job_id: str, owner: bytes | None, author: int | None = None) -> str:
+    @staticmethod
+    def _job_archive(db: sqlite3.Connection, job_id: str, user_id: int | None) -> sqlite3.Row | None:
+        return db.execute("""
+            SELECT c.id, p.author_id,
+                   EXISTS(SELECT 1 FROM account_saves s WHERE s.course_id=c.id AND s.user_id=?) AS saved,
+                   EXISTS(SELECT 1 FROM account_saves s WHERE s.course_id=c.id) AS account_owned
+            FROM courses c LEFT JOIN publications p ON p.course_id=c.id
+            WHERE c.job_id=?
+        """, (user_id, job_id)).fetchone()
+
+    def can_access_job(self, job_id: str, user_id: int | None) -> bool:
+        with closing(self._connect()) as db:
+            archive = self._job_archive(db, job_id, user_id)
+        if archive is None or (not archive["account_owned"] and archive["author_id"] is None):
+            return True
+        return user_id is not None and (bool(archive["saved"]) or archive["author_id"] == user_id)
+
+    def _archive(self, db: sqlite3.Connection, job_id: str, browser: bytes | None,
+                 user_id: int, *, publish: bool = False) -> str:
+        unavailable = HTTPException(404, "任务不存在。", headers=PRIVATE_CACHE)
         if not IDENTIFIER.fullmatch(job_id):
-            raise HTTPException(404, "任务不存在。")
-        # Serialize snapshots with deletion of their source job. The course
-        # cannot be listed until the complete directory has been published.
-        with self.archive_lock, closing(self._connect()) as db:
-            existing = db.execute(
-                "SELECT c.id, p.author_id FROM courses c LEFT JOIN publications p ON p.course_id=c.id "
-                "WHERE c.job_id=?", (job_id,)
-            ).fetchone()
-            if existing and author is not None and existing["author_id"] == author:
+            raise unavailable
+        existing = self._job_archive(db, job_id, user_id)
+        if existing:
+            author = existing["author_id"]
+            if publish and author is not None and author != user_id:
+                raise unavailable
+            if existing["saved"] or author == user_id:
                 return existing["id"]
-            job = self.jobs.get(job_id)
-            if not job:
-                if existing and self.get(existing["id"], owner=owner):
-                    return existing["id"]
-                raise HTTPException(404, "任务不存在。")
-            # Legacy jobs and CLI-created jobs keep their original job-ID access.
-            source_browser = self.jobs.browser_owner(job_id)
-            if source_browser is not None and source_browser != owner:
-                raise HTTPException(404, "任务不存在。")
-            if job["status"] != JobStatus.COMPLETED:
-                raise HTTPException(409, "课程完成后可以保存或分享。")
-            if existing:
-                return existing["id"]
-            lesson = self.jobs.lesson(job_id)
-            folder = self.jobs.jobs_dir / job_id
-            media = [folder / ASSETS[kind][0] for kind in ("video", "presentation")]
-            if not lesson or not all(path.is_file() for path in media):
-                raise HTTPException(409, "课程成品不完整。")
-            cover = folder / "presentation-preview" / "page-001.png"
-            has_cover = cover.is_file()
-            course_id = uuid.uuid4().hex
-            destination = self.directory / course_id
-            content = {"transcript": _transcript(lesson, folder), "learning_plan": _learning_plan(lesson, folder)}
-            with tempfile.TemporaryDirectory(prefix=".snapshot-", dir=self.directory) as temporary:
-                snapshot = Path(temporary) / "ready"
-                snapshot.mkdir()
-                for path in media:
-                    shutil.copyfile(path, snapshot / path.name)
-                if has_cover:
-                    shutil.copyfile(cover, snapshot / ASSETS["cover"][0])
-                snapshot.rename(destination)
-                try:
-                    with db:
-                        db.execute("INSERT INTO courses VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                   (course_id, job_id, lesson.title, lesson.objective, utc_now(), has_cover,
-                                    json.dumps(content, ensure_ascii=False, allow_nan=False)))
-                except Exception:
-                    shutil.rmtree(destination)
-                    raise
-            return course_id
+            if existing["account_owned"] or author is not None:
+                raise unavailable
+        job = self.jobs.get(job_id)
+        # Legacy CLI jobs retain job-ID access. Web drafts use the browser that created them.
+        source_browser = self.jobs.browser_owner(job_id) if job else None
+        if not job or (source_browser is not None and source_browser != browser):
+            raise unavailable
+        if job["status"] != JobStatus.COMPLETED:
+            raise HTTPException(409, "课程完成后可以保存或分享。", headers=PRIVATE_CACHE)
+        if existing:
+            return existing["id"]
+        lesson = self.jobs.lesson(job_id)
+        folder = self.jobs.jobs_dir / job_id
+        media = [folder / ASSETS[kind][0] for kind in ("video", "presentation")]
+        if not lesson or not all(path.is_file() for path in media):
+            raise HTTPException(409, "课程成品不完整。", headers=PRIVATE_CACHE)
+        cover = folder / "presentation-preview" / "page-001.png"
+        has_cover = cover.is_file()
+        course_id = uuid.uuid4().hex
+        destination = self.directory / course_id
+        content = {"transcript": _transcript(lesson, folder), "learning_plan": _learning_plan(lesson, folder)}
+        with tempfile.TemporaryDirectory(prefix=".snapshot-", dir=self.directory) as temporary:
+            snapshot = Path(temporary) / "ready"
+            snapshot.mkdir()
+            for path in media:
+                shutil.copyfile(path, snapshot / path.name)
+            if has_cover:
+                shutil.copyfile(cover, snapshot / ASSETS["cover"][0])
+            snapshot.rename(destination)
+            try:
+                with db:
+                    db.execute("INSERT INTO courses VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (course_id, job_id, lesson.title, lesson.objective, utc_now(), has_cover,
+                                json.dumps(content, ensure_ascii=False, allow_nan=False)))
+            except Exception:
+                shutil.rmtree(destination)
+                raise
+        return course_id
 
-    def save(self, job_id: str, owner: bytes) -> dict:
-        course_id = self._archive(job_id, owner)
-        with closing(self._connect()) as db, db:
-            db.execute("INSERT OR IGNORE INTO saves VALUES (?, ?, ?)", (owner, course_id, utc_now()))
-        return self.get(course_id, owner=owner)
+    def save(self, job_id: str, browser: bytes | None, user_id: int) -> dict:
+        # Serialize authorization and ownership writes with source-job deletion and legacy imports.
+        with self.archive_lock, closing(self._connect()) as db, db:
+            course_id = self._archive(db, job_id, browser, user_id)
+            db.execute("INSERT OR IGNORE INTO account_saves VALUES (?, ?, ?)", (user_id, course_id, utc_now()))
+        return self.get(course_id, user_id=user_id)
 
-    def publish(self, job_id: str, owner: bytes | None, author: int) -> dict:
-        course_id = self._archive(job_id, owner, author)
-        with closing(self._connect()) as db, db:
+    def publish(self, job_id: str, browser: bytes | None, author: int) -> dict:
+        with self.archive_lock, closing(self._connect()) as db, db:
+            course_id = self._archive(db, job_id, browser, author, publish=True)
             db.execute("INSERT OR IGNORE INTO publications VALUES (?, ?, ?)", (course_id, author, utc_now()))
         return self.get(course_id, public=True)
+
+    def legacy_count(self, browser: bytes | None) -> int:
+        if browser is None:
+            return 0
+        with closing(self._connect()) as db:
+            return db.execute("SELECT COUNT(*) FROM saves WHERE browser=?", (browser,)).fetchone()[0]
+
+    def import_browser(self, browser: bytes | None, user_id: int) -> list[str]:
+        if browser is None:
+            return []
+        with self.archive_lock, closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            courses = db.execute("SELECT course_id FROM saves WHERE browser=? ORDER BY saved_at DESC, course_id",
+                                 (browser,)).fetchall()
+            db.execute("""
+                INSERT OR IGNORE INTO account_saves (user_id, course_id, saved_at)
+                SELECT ?, course_id, saved_at FROM saves WHERE browser=?
+            """, (user_id, browser))
+            db.execute("DELETE FROM saves WHERE browser=?", (browser,))
+        return [row["course_id"] for row in courses]
+
+    def record_view(self, course_id: str, playback_id: str) -> int:
+        if not IDENTIFIER.fullmatch(course_id):
+            raise HTTPException(404, "课程不存在。")
+        with closing(self._connect()) as db, db:
+            db.execute(
+                "INSERT OR IGNORE INTO publication_views "
+                "SELECT course_id, ? FROM publications WHERE course_id=?",
+                (playback_id, course_id),
+            )
+            row = db.execute(
+                "SELECT COUNT(v.playback_id) FROM publications p "
+                "LEFT JOIN publication_views v ON v.course_id=p.course_id "
+                "WHERE p.course_id=? GROUP BY p.course_id",
+                (course_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(404, "课程不存在。")
+            return row[0]
 
     @staticmethod
     def _representation(row: sqlite3.Row, public: bool) -> dict:
         route = "community/courses" if public else "courses"
         prefix = f"/api/{route}/{row['id']}/assets"
-        return {
+        summary = {
             "id": row["id"],
             "title": row["title"],
             "objective": row["objective"],
@@ -298,15 +366,18 @@ class CourseLibrary:
             "assets": {"video": f"{prefix}/video", "presentation": f"{prefix}/presentation",
                        "cover": f"{prefix}/cover" if row["has_cover"] else None},
         }
+        if public:
+            summary["view_count"] = row["view_count"]
+        return summary
 
-    def list(self, *, owner: bytes | None = None, public: bool = False) -> list[dict]:
-        return [self._representation(row, public) for row in self._read(owner=owner, public=public)]
+    def list(self, *, user_id: int | None = None, public: bool = False) -> list[dict]:
+        return [self._representation(row, public) for row in self._read(user_id=user_id, public=public)]
 
-    def get(self, course_id: str, *, owner: bytes | None = None, public: bool = False,
+    def get(self, course_id: str, *, user_id: int | None = None, public: bool = False,
             detail: bool = False) -> dict | None:
         if not IDENTIFIER.fullmatch(course_id):
             return None
-        rows = self._read(owner=owner, public=public, course_id=course_id, detail=detail)
+        rows = self._read(user_id=user_id, public=public, course_id=course_id, detail=detail)
         if not rows:
             return None
         data = self._representation(rows[0], public)
@@ -314,24 +385,26 @@ class CourseLibrary:
             data.update(json.loads(rows[0]["content_json"]))
         return data
 
-    def _read(self, *, owner: bytes | None, public: bool, course_id: str | None = None,
+    def _read(self, *, user_id: int | None, public: bool, course_id: str | None = None,
               detail: bool = False) -> list[sqlite3.Row]:
-        if not public and owner is None:
+        if not public and user_id is None:
             return []
         query = """SELECT c.id, c.title, c.objective, c.created_at, c.has_cover,
                           p.published_at, u.username AS author"""
+        if public:
+            query += ", (SELECT COUNT(*) FROM publication_views v WHERE v.course_id=c.id) AS view_count"
         if detail:
             query += ", c.content_json"
         query += " FROM courses c"
         if public:
             query += " JOIN publications p ON p.course_id=c.id"
         else:
-            query += " JOIN saves s ON s.course_id=c.id LEFT JOIN publications p ON p.course_id=c.id"
+            query += " JOIN account_saves s ON s.course_id=c.id LEFT JOIN publications p ON p.course_id=c.id"
         query += " LEFT JOIN users u ON u.id=p.author_id WHERE 1=1"
         parameters = []
         if not public:
-            query += " AND s.browser=?"
-            parameters.append(owner)
+            query += " AND s.user_id=?"
+            parameters.append(user_id)
         if course_id:
             query += " AND c.id=?"
             parameters.append(course_id)
@@ -398,6 +471,10 @@ class Credentials(BaseModel):
         return username
 
 
+class CoursePlayback(BaseModel):
+    playback_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+
+
 def _same_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     expected = f"{request.url.scheme}://{request.url.netloc}"
@@ -411,19 +488,28 @@ def course_routes(library: CourseLibrary) -> APIRouter:
     router = APIRouter(prefix="/api")
 
     def no_store(response: Response) -> None:
-        response.headers["Cache-Control"] = "private, no-store"
+        response.headers.update(PRIVATE_CACHE)
+
+    def user_data(user: sqlite3.Row) -> dict:
+        return {"id": user["id"], "username": user["username"]}
+
+    def require_user(request: Request, message: str) -> sqlite3.Row:
+        user = library.current_user(_cookie_digest(request, SESSION_COOKIE))
+        if user is None:
+            raise HTTPException(401, message, headers=PRIVATE_CACHE)
+        return user
 
     def set_session(request: Request, response: Response, user: sqlite3.Row) -> dict:
         token = library.start_session(user["id"], _cookie_digest(request, SESSION_COOKIE))
         no_store(response)
         _set_cookie(request, response, SESSION_COOKIE, token, SESSION_SECONDS)
-        return {"user": {"username": user["username"]}}
+        return {"user": user_data(user)}
 
     @router.get("/auth/session")
     def session(request: Request, response: Response) -> dict:
         no_store(response)
         user = library.current_user(_cookie_digest(request, SESSION_COOKIE))
-        return {"user": {"username": user["username"]} if user else None}
+        return {"user": user_data(user) if user else None}
 
     @router.post("/auth/register")
     def register(data: Credentials, request: Request, response: Response) -> dict:
@@ -447,29 +533,39 @@ def course_routes(library: CourseLibrary) -> APIRouter:
 
     @router.get("/courses/mine")
     def my_courses(request: Request, response: Response) -> dict:
+        user = require_user(request, "登录后即可查看我的课程。")
         no_store(response)
-        return {"courses": library.list(owner=ensure_browser(request, response))}
+        return {
+            "courses": library.list(user_id=user["id"]),
+            "legacy_count": library.legacy_count(_cookie_digest(request, BROWSER_COOKIE)),
+        }
+
+    @router.post("/courses/import-browser")
+    def import_browser_courses(request: Request, response: Response) -> dict:
+        _same_origin(request)
+        user = require_user(request, "登录后即可导入旧课程。")
+        no_store(response)
+        return {"course_ids": library.import_browser(_cookie_digest(request, BROWSER_COOKIE), user["id"])}
 
     @router.post("/jobs/{job_id}/save")
     def save_course(job_id: str, request: Request, response: Response) -> dict:
         _same_origin(request)
+        user = require_user(request, "登录后即可保存课程。")
         no_store(response)
-        return library.save(job_id, ensure_browser(request, response))
+        return library.save(job_id, _cookie_digest(request, BROWSER_COOKIE), user["id"])
 
     @router.post("/jobs/{job_id}/publish")
     def publish_course(job_id: str, request: Request, response: Response) -> dict:
         _same_origin(request)
-        user = library.current_user(_cookie_digest(request, SESSION_COOKIE))
-        if not user:
-            raise HTTPException(401, "登录后即可分享课程。")
+        user = require_user(request, "登录后即可分享课程。")
         no_store(response)
         return library.publish(job_id, _cookie_digest(request, BROWSER_COOKIE), user["id"])
 
     def get_course(course_id: str, request: Request, public: bool, *, detail: bool = False) -> dict:
-        owner = _cookie_digest(request, BROWSER_COOKIE)
-        course = library.get(course_id, owner=owner, public=public, detail=detail)
+        user_id = None if public else require_user(request, "登录后即可查看我的课程。")["id"]
+        course = library.get(course_id, user_id=user_id, public=public, detail=detail)
         if course is None:
-            raise HTTPException(404, "课程不存在。", headers={"Cache-Control": "no-store"})
+            raise HTTPException(404, "课程不存在。", headers=PRIVATE_CACHE)
         return course
 
     @router.get("/courses/{course_id}")
@@ -478,24 +574,32 @@ def course_routes(library: CourseLibrary) -> APIRouter:
         return get_course(course_id, request, False, detail=True)
 
     @router.get("/community/courses")
-    def community_courses() -> dict:
+    def community_courses(response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-cache"
         return {"courses": library.list(public=True)}
 
     @router.get("/community/courses/{course_id}")
-    def community_course(course_id: str, request: Request) -> dict:
+    def community_course(course_id: str, request: Request, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-cache"
         return get_course(course_id, request, True, detail=True)
+
+    @router.post("/community/courses/{course_id}/views")
+    def record_course_view(course_id: str, data: CoursePlayback, request: Request, response: Response) -> dict:
+        _same_origin(request)
+        no_store(response)
+        return {"view_count": library.record_view(course_id, data.playback_id)}
 
     def course_asset(course_id: str, kind: str, request: Request, public: bool, download: bool) -> FileResponse:
         course = get_course(course_id, request, public)
         if not course["assets"].get(kind):
-            raise HTTPException(404, "课程文件不存在。", headers={"Cache-Control": "no-store"})
+            raise HTTPException(404, "课程文件不存在。", headers=PRIVATE_CACHE)
         filename, mime = ASSETS[kind]
         path = library.directory / course_id / filename
         if not path.is_file():
-            raise HTTPException(404, "课程文件不存在。", headers={"Cache-Control": "no-store"})
+            raise HTTPException(404, "课程文件不存在。", headers=PRIVATE_CACHE)
         headers = {"X-Content-Type-Options": "nosniff"}
         if not public:
-            headers["Cache-Control"] = "private, no-store"
+            headers.update(PRIVATE_CACHE)
         return FileResponse(path, media_type=mime, filename=filename, headers=headers,
                             content_disposition_type="attachment" if download or kind == "presentation" else "inline")
 

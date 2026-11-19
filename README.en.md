@@ -2,7 +2,7 @@
 
 **Language / 语言:** [简体中文](README.md) | [English](README.en.md)
 
-Convert textbooks, notes and knowledge PDFs you have permission to use into Chinese teaching videos and PPTX courseware with source references. The pipeline supports text extraction, local OCR, course planning, scripts, SVG diagrams, speech and video assembly. The website shows scripts, PDF pages, quotations and knowledge relations, with MP4, PPTX and scene data downloads.
+Convert textbooks, notes and knowledge PDFs you have permission to use into Chinese teaching videos and PPTX courseware with source references. The pipeline supports text extraction, local OCR, course planning, scripts, SVG diagrams, speech and video assembly. The website shows videos, transcript segments, PDF page numbers and source quotations. MP4 and PPTX downloads are available from the course page.
 
 The website generates courses with local Ollama or a compatible service. The API accepts `mode=demo` for rule-based demo courses without a model or an API key. Source matching, model review and computation checks have limited scopes; teaching content still needs human review.
 
@@ -10,8 +10,8 @@ The website generates courses with local Ollama or a compatible service. The API
 
 - **Source reading:** The new website copies all extracted textbook text into subtitle and speech inputs without knowledge selection. Page IDs, character ranges and hashes support checks for omissions, repetition, reordering and rewriting. Slides may summarize. Scanned pages remain dependent on OCR quality.
 - **Automatic direction:** Thirteen templates cover STEM, humanities and professional families. A local model identifies the subject from source content, then selects the template, layout and diagrams or animation. STEM uses figures and computational scenes; humanities uses scene dramas. The website requires no manual presentation, template or animation selection.
-- **Personalized study paths:** Enter prior knowledge, learning goals, days and daily available minutes under “个性化学习规划”. The model schedules study, revision and self checks using actual course segment IDs and PDF page references. Code checks coverage and assigns the requested time budget. View the plan online or download Markdown/JSON; the source course remains unabridged.
-- **Two dynamic presentation paths:** Quantitative content can use Manim for computed figures and processes. Humanities scene dramas plan characters, locations and shots, then call image or video services. Results identify the medium actually produced. Manim constructions require computation and rendering checks; scene dramas require a configured media service. PPT slides contain static keyframes and motion is delivered in a separate MP4.
+- **Personalized study paths:** Enter prior knowledge, learning goals, days and daily available minutes under “个性化学习规划”. The model schedules study, revision and self checks using actual course segment IDs and PDF page references. Code checks coverage and assigns the requested time budget. View the plan on the course page or download Markdown and JSON through the API. The source course remains unabridged.
+- **Two dynamic presentation paths:** Quantitative content can use Manim for computed figures and processes. Humanities scene dramas plan characters, locations and shots, then call image or video services. Manim constructions require computation and rendering checks; scene dramas require a configured media service. PPT slides contain static keyframes and motion is delivered in a separate MP4.
 
 The full project name is **Lively Class——AI教育Agent** (AI Education Agent), shortened to **Lively Class**. **Bring knowledge to life, bring the classroom alive.** Internal Python packages, configuration variables and existing data paths retain compatible names. See the [four-feature implementation review](docs/四项功能核对.md) for code locations.
 
@@ -19,12 +19,15 @@ Subject names and template routing serve different purposes. Formulae, geometry 
 
 ### Website workflow
 
-- The website opens on a full-screen homepage. Scroll down, swipe up, or select **Start creating** to enter the workspace. Continue down to **My courses** and **Shared community**. The top navigation on those three screens links to all four screens.
-- Upload a PDF, enter PPT instructions and follow generation progress and results in the same workspace. Open model and generation settings from the corners of the composer to configure models, personalized learning, narration and media.
-- Select **Save to my courses** after generation to keep a course without signing in. The course page plays the video, offers MP4 and PPTX downloads, and follows playback in the transcript. Highlights, study checkboxes and playback position are stored in the current browser.
-- Anyone can browse the shared community. Sign in or register from the upper-right corner or after selecting **Share to community**. After you confirm publication, visitors can watch the video, read the transcript and study plan, and download the video and PPTX.
+- The website opens on a full-screen homepage. Scroll down, swipe up, or select **Start creating** to enter the workspace. Continue down to **My courses** and **Shared community**. The top navigation on those three screens links to all four screens. In the workspace, scrolling in the conversation and composer stays within the workspace. Scroll in the side margins to switch screens.
+- Drop a textbook PDF anywhere in the composer, or click **Add PDF**. Open **Course settings** in the lower-right corner. The **Model settings** and **Generation settings** tabs cover models, personalized learning, narration and media. The question mark beside each model explains its role.
+- Send your course instructions to see the actual generation stages, teaching video, transcript segments and textbook references in the same conversation. You can draft your next message while generation runs. To revise the course, send a follow-up in the same composer. Each turn creates a separate version, so you can still view and play the previous one.
+- Sign in to save the latest successful version to **My courses**. Use the same account on the same service to open your saved courses in another browser or on another device. The personal list and course details are accessible only to the account that saved them. On the course page you can download MP4 and PPTX files, follow the transcript as the video plays, and add or remove highlights.
+- Sign in to **Share to community**. Each publication is attributed to the account that published it. Anyone can browse the community, watch published videos, read transcripts and study plans, and download video and PPTX files. The view count appears in the lower-right corner of each course card. Each visit to a course page counts as one view on first playback.
 
-The personal course list is keyed to a browser cookie, and study records use browser storage for the site. Clearing site data removes access to the previous personal course list from that browser and clears local study records. Saved or published course files and the course database are kept in `ZHIJIANG_DATA_DIR/courses/` and `ZHIJIANG_DATA_DIR/courses.sqlite3` respectively. They survive generation-job cleanup. Back up both when migrating the server.
+To import courses saved under the old browser-based library, sign in from the browser that saved them and choose the import option in **My courses**. Highlights, study checkboxes and playback position are stored per account in the current browser. Guests' study activity on community courses is also stored in the current browser.
+
+Saved and published course files are kept in `ZHIJIANG_DATA_DIR/courses/`. Accounts, personal course ownership, community publications and view counts are kept in `ZHIJIANG_DATA_DIR/courses.sqlite3`. Courses remain available after service restarts and generation-job cleanup. Back up both locations when migrating the server.
 
 ### Adaptive styling and Comic lessons
 
@@ -50,11 +53,11 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn zhijiang.main:app --host 127.0.0.1 --port 8765
 ```
 
-Open the website and enter the workspace. Select the original sample PDF and confirm usage rights. In model settings, select your provider and enter a working API URL and model name. Select Windows system speech in generation settings and click **Generate course**. Review the finished transcript, sources, video and slides, or save the result to **My courses**. **Press `Ctrl+C` in the server terminal to stop it**. [Local website](http://127.0.0.1:8765/) · [Original sample PDF](examples/binary_search_original.pdf)
+Open the website and enter the workspace. Drop the original sample PDF into the composer and confirm usage rights. Open **Course settings**, select your provider and enter a working API URL and model name in **Model settings**, then select Windows system speech in **Generation settings**. Submit and review the video, transcript and sources in the conversation. Send a follow-up to revise the course. Sign in to save the current version to **My courses**. **Press `Ctrl+C` in the server terminal to stop it**. [Local website](http://127.0.0.1:8765/) · [Original sample PDF](examples/binary_search_original.pdf)
 
-Python 3.11+ is required; Python 3.13 has been verified. System narration requires Windows Chinese speech; other environments can use a compatible speech API. `imageio-ffmpeg` supplies FFmpeg, so a system installation is unnecessary.
+Python 3.11+ is required; Python 3.13 has been verified. Video and slide previews can use built-in Chinese fonts on Windows and macOS. System narration requires Windows Chinese speech. Other environments can use a compatible speech API. `imageio-ffmpeg` supplies FFmpeg, so a system installation is unnecessary.
 
-Use model and generation settings in the workspace to adjust options for the current job or preview a voice. Generation notes and technical information appear under **Generation records**, and **Source evidence** in the workspace results expands quotations from the textbook.
+Use **Course settings** to configure the first turn and preview a voice. Follow-up revisions reuse the textbook and course settings from the previous version. The conversation shows generation stages and lets you expand textbook quotations in the transcript segments.
 
 ## Two-textbook premium demo (standalone)
 
@@ -266,11 +269,11 @@ See [four-level mathematics validation](docs/math-level-validation-2026-10.md) f
 
 ## Current limitations
 
-- One sequential local queue; one PDF produces one lesson. Only one web service may own a data directory; duplicate startup exits without interrupting active jobs. Upload limit: 200 MB, with no fixed page or target-duration limit. Long books increase processing time and size.
+- One sequential local queue. Each conversation uses one PDF, and each generation or revision produces a course version. Only one web service may own a data directory. Duplicate startup exits and active jobs continue. The upload limit is 200 MB. Page count and target duration depend on the textbook. Longer books increase processing time and output size.
 - OCR does not guarantee recovery of complex formulas, tables or layout. No manual formula-confirmation interface exists.
 - Mathematical object mode reads actual mixed-page images and formulas, but recognition and model review can still be wrong; compare with the original. Supported expressions are restricted 2-D constructions and unique real function branches. Model planning, unclear source pages and unsupported mathematical operations fail explicitly.
 - Each strict-mode qualitative scene uses one source page and may reselect an adjacent input page. Missing title requirements or explanations requiring joint evidence across pages fail explicitly. Scope and semantic reviews can still be wrong and do not guarantee factual correctness.
-- The website supports saving courses, annotating transcripts and sharing completed courses. Interfaces for editing knowledge points or the transcript itself and managing a human review workflow are unavailable.
+- The website supports revising PPT direction in the conversation, saving versions, highlighting text and sharing completed courses. Narration in source-reading courses follows the extracted textbook text.
 - PPTX is static courseware with editable titles and notes; SVG paths are not separate PowerPoint shapes. Narration and continuous animations belong to the separate full MP4.
 - Restricted 2-D scenes, source-relation tracing and source-course SRT/VTT exports are supported. Complex 3-D mechanisms, cross-chapter reasoning, fact proofs and course ZIP export are not implemented. Character coverage does not independently establish OCR or diagram semantics.
 

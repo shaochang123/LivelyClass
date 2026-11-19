@@ -321,6 +321,12 @@ class Lesson(BaseModel):
     deck_plan: dict = Field(default_factory=dict)
 
 
+class CourseRevision(BaseModel):
+    lesson: Lesson
+    original_request: str
+    previous_request: str
+
+
 class ReviewResult(BaseModel):
     approved: bool
     issues: list[str] = Field(default_factory=list, max_length=8)

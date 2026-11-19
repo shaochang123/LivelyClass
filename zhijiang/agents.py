@@ -282,6 +282,7 @@ class OpenAICompatibleClient:
         self.model = model
         self.http_client = http_client or httpx.Client(timeout=_GENERATION_TIMEOUT)
         self._owns_client = http_client is None
+        self.progress: Callable[[str, int, int], None] | None = None
 
     def close(self) -> None:
         if self._owns_client:
@@ -301,6 +302,8 @@ class OpenAICompatibleClient:
                     {"role": "user", "content": f"上次格式无效：{last_error}。请只返回有效 JSON。"+last_hints}
                 )
             try:
+                if self.progress is not None:
+                    self.progress("模型生成中", 0, 0)
                 response = self.http_client.post(
                     f"{self.base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self.api_key}"},

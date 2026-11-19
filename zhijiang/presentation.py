@@ -24,6 +24,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
+from zhijiang.fonts import chinese_font
 from zhijiang.models import Lesson, LessonSegment
 
 
@@ -173,16 +174,12 @@ def _diagram_svg(segment: LessonSegment) -> bytes:
 
 
 def _font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
-    paths = (
-        ["C:/Windows/Fonts/msyhbd.ttc", "C:/Windows/Fonts/simhei.ttf"] if bold
-        else ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf"]
-    ) + [
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for path in paths:
-        if Path(path).is_file():
-            return ImageFont.truetype(path, size)
+    font = chinese_font(size, bold=bold)
+    if font is not None:
+        return font
+    path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    if Path(path).is_file():
+        return ImageFont.truetype(path, size)
     return ImageFont.load_default(size=size)
 
 

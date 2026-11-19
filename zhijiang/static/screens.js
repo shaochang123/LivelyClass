@@ -48,7 +48,7 @@
     if (record) history.pushState(null, "", `#${incoming.id}`);
     applyNavigation();
     if (focus) {
-      const heading = incoming.querySelector("#job-section:not([hidden]) h2") ||
+      const heading = incoming.querySelector("#job-section:not([hidden])") ||
         document.getElementById(incoming.getAttribute("aria-labelledby"));
       heading?.focus({ preventScroll: true });
     }
@@ -126,6 +126,17 @@
     if (!pixels || Math.abs(event.deltaX * unit) > pixels * 1.25) return;
     const direction = Math.sign(event.deltaY);
     const now = performance.now();
+
+    // Keep gestures from the conversation or composer local, including their
+    // inertial tail if the pointer moves beyond the scroll area.
+    if (event.target instanceof Element && event.target.closest("[data-scroll-lock]")) {
+      wheel = { direction, lastAt: now, locked: true };
+      return;
+    }
+    if (wheel.locked && now - wheel.lastAt <= wheelPause) {
+      wheel.lastAt = now;
+      return;
+    }
 
     // Wheel events do not expose trackpad phases. Treat a pause, a deliberate
     // reversal, or renewed input after a decaying tail as a fresh gesture.

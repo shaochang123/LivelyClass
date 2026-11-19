@@ -59,21 +59,24 @@ def render_source_motion(lesson,document,client,folder,pdf_path,options,progress
             'speech':'original_source_only','timing':'scaled_to_source_audio_not_word_aligned'},ensure_ascii=False,indent=2),encoding='utf8')
 
 
-def run_literal_job(processor,document,agents,options,voice_mode,speech,folder,progress,job_id=None,*,planning_client=None,review_client=None):
+def run_literal_job(processor,document,agents,options,voice_mode,speech,folder,progress,job_id=None,*,
+                    planning_client=None,review_client=None,revision=None):
     from zhijiang.subject_routing import route_subject
     folder=Path(folder);client=agents.client if isinstance(agents,AIAgents) else None
     resolved=options.model_copy(deep=True);routing=None
     if options.style_mode=='subject':
         if client is None:raise GenerationError('自动学科编排需要真实AI模式。')
-        progress('阅读教材并识别学科',22)
-        routing=route_subject(document,client,folder/'subject-routing')
+        routing=revision.lesson.deck_plan.get('subject_routing') if revision else None
+        if not routing:
+            progress('阅读教材并识别学科',22)
+            routing=route_subject(document,client,folder/'subject-routing')
         resolved.ppt_template=routing['selection']['template_id']
         resolved.style_mode=routing['selection']['presentation']
     if resolved.style_mode=='comic':
         from zhijiang.drama import require_drama_service
         require_drama_service(options.art)
     lesson=build_literal_course(document,client,resolved,voice_mode,folder/'literal-slides',progress,
-        routing=routing,mode=Mode.AI if client else Mode.DEMO)
+        routing=routing,mode=Mode.AI if client else Mode.DEMO,revision=revision)
     build_course_style(lesson,resolved.style_mode,client,folder/'course-style',prompt=options.prompt)
     if resolved.style_mode=='comic':
         progress('规划漫剧角色、场景与连续镜头',65)

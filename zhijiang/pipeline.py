@@ -112,10 +112,10 @@ class JobProcessor:
             active_stage[:] = [stage, value]
             self.store.set_progress(job_id, stage, value)
 
-        def model_progress(stage, elapsed, characters):
+        def model_progress(stage, _elapsed, _characters):
+            label = "模型服务限流，等待重试" if stage.startswith("模型服务限流") else "模型生成中"
             self.store.set_progress(job_id,
-                f'{active_stage[0]} · {stage}' if stage.startswith('模型服务限流') else
-                f'{active_stage[0]} · 模型生成中（{elapsed}秒，{characters}字）', active_stage[1])
+                f'{active_stage[0]} · {label}', active_stage[1])
 
         try:
             progress("解析 PDF", 8)
@@ -124,16 +124,37 @@ class JobProcessor:
             mode = Mode(job["mode"])
             voice_mode = VoiceMode(job["voice_mode"])
             options = self.store.get_options(job_id)
-            teaching_prompt = options.prompt + (template_instruction(options.ppt_template)
+            try:
+                revision = self.store.revision_context(job_id) if job["parent_job_id"] else None
+            except (OSError, ValueError) as exc:
+                raise GenerationError("上一版课程内容已丢失，请重新发起修改。") from exc
+            request = options.prompt
+            if revision and options.narration_mode != 'source_verbatim':
+                previous = revision.lesson
+                outline = "\n".join(
+                    f"{i}. {segment.title}（第 {segment.evidence.page} 页）：{'；'.join(segment.bullets)}"
+                    for i, segment in enumerate(previous.segments, 1)
+                )
+                request = (
+                    f"原始要求：{revision.original_request}\n"
+                    f"上一轮要求：{revision.previous_request}\n"
+                    f"上一版课程《{previous.title}》：{previous.objective}\n{outline[:4000]}\n"
+                    f"在上一版基础上，以本轮修改要求为优先：{options.prompt}\n"
+                    "保留修改要求未涉及的教学内容，以教材原文为事实依据。"
+                )
+            teaching_prompt = request + (template_instruction(options.ppt_template)
                 if options.ppt_template != 'classic' else '')
             agents = self._agents(mode, options)
             direct_draft = (isinstance(agents, AIAgents) and options.content_checks == 'warn'
                             and options.animation_mode in {'auto', 'visual', 'basic'})
             if isinstance(agents, AIAgents):
                 agents.content_checks = options.content_checks
-            if isinstance(agents, AIAgents) and isinstance(agents.client, OllamaClient):
-                agents.client.progress = model_progress
-                agents.client.prefer_json=options.animation_mode=='geometry'
+                if isinstance(agents.client, (OllamaClient, OpenAICompatibleClient)):
+                    agents.client.progress = model_progress
+                if revision and options.narration_mode != 'source_verbatim':
+                    agents.prompt = teaching_prompt
+                if isinstance(agents.client, OllamaClient):
+                    agents.client.prefer_json = options.animation_mode == 'geometry'
             if mode==Mode.AI and options.animation_mode=='geometry' and options.narration_mode!='source_verbatim':
                 from zhijiang.math_sources import read_math_pdf
                 from zhijiang.mathematical_planning import plan_constructed_lesson
@@ -155,13 +176,16 @@ class JobProcessor:
                         return OllamaClient(options.base_url,name,semantic_thinking=options.semantic_thinking,
                             prefer_json=True,progress=model_progress,num_gpu=self.settings.ollama_num_gpu,
                             thinking_level=self.settings.ollama_thinking_level,context_tokens=self.settings.ollama_context_tokens)
-                    return OpenAICompatibleClient(options.base_url,options.api_key,name)
+                    client = OpenAICompatibleClient(options.base_url, options.api_key, name)
+                    client.progress = model_progress
+                    return client
                 math_planner=source_auxiliary(options.math_model)
                 math_reviewer=source_auxiliary(options.review_model)
                 speech=self._speech(voice_mode,self.store.get_speech_options(job_id))
                 lesson=run_literal_job(self,document,agents,options,voice_mode,speech,folder,progress,job_id,
-                    planning_client=math_planner,review_client=math_reviewer)
+                    planning_client=math_planner,review_client=math_reviewer,revision=revision)
                 self.store.save_lesson(job_id,lesson)
+                self.store.clear_api_key(job_id)
                 self.store.complete(job_id)
                 return
             # Special-purpose templates are opt-in. A mixed textbook must keep
@@ -215,14 +239,15 @@ class JobProcessor:
                 # An unchecked extraction must not become a strict-mode cache hit.
                 extraction_options = options.model_dump()
                 batch_fingerprint=hashlib.sha256(json.dumps({'version':'content-selection-v9-complete-source-glyph-recovery',
-                    'source':source_hash,'mode':mode,'options':extraction_options},sort_keys=True).encode()).hexdigest()
+                    'source':source_hash,'mode':mode,'options':extraction_options,
+                    **({'revision_request':request} if revision else {})},sort_keys=True).encode()).hexdigest()
                 fingerprint=hashlib.sha256(('quantity-binding-v1:'+batch_fingerprint).encode()).hexdigest()
                 bundle=checkpoint(folder/'knowledge.json',fingerprint,KnowledgeBundle,
                     lambda:agents.extract_knowledge(document, cache_dir=folder/'knowledge-batches',
                         cache_fingerprint=batch_fingerprint,
                         complete_sources=options.animation_mode=='geometry' or direct_draft,
-                        teaching_preference=(options.prompt+' 只选择需要数学对象推演的核心数学知识与必要条件，不选人物历史背景或泛泛回顾。'
-                            if options.animation_mode=='geometry' else options.prompt),
+                        teaching_preference=(request+' 只选择需要数学对象推演的核心数学知识与必要条件，不选人物历史背景或泛泛回顾。'
+                            if options.animation_mode=='geometry' else request),
                         progress=lambda done,total,label:progress(
                             f'提取知识点（{done}/{total} 批）：{label}',22 + done * 15 // total))
                         if isinstance(agents,AIAgents) else agents.extract_knowledge(document))
@@ -282,7 +307,7 @@ class JobProcessor:
                 progress('根据教材内容设计课程视觉风格',72)
             build_course_style(lesson,options.style_mode,
                 agents.client if isinstance(agents,AIAgents) else None,
-                folder/'course-style',prompt=options.prompt)
+                folder/'course-style',prompt=request)
             (folder/'presentation-plan.json').write_text(
                 json.dumps(lesson.deck_plan,ensure_ascii=False,indent=2),encoding='utf-8')
             self.store.save_lesson(job_id, lesson)
@@ -360,11 +385,14 @@ class JobProcessor:
             self.presentation_renderer(lesson, folder / "lesson.pptx")
             self.store.set_progress(job_id, "合成同模板完整视频", 94)
             self.video_renderer(lesson, audio_files, folder / "lesson.mp4")
+            self.store.clear_api_key(job_id)
             self.store.complete(job_id)
         except (PDFError, GenerationError, SpeechError, VideoError, PresentationError, MathAnimationError, TeachingDesignError, AssetError) as exc:
+            self.store.clear_api_key(job_id)
             self.store.fail(job_id, str(exc))
         except Exception:
             logger.exception("任务 %s 发生未预期的错误", job_id)
+            self.store.clear_api_key(job_id)
             self.store.fail(job_id, "处理失败，请检查服务日志后重试。")
         finally:
             if math_planner is not None:
@@ -373,7 +401,6 @@ class JobProcessor:
                     if math_planner.invalid_outputs:
                         (folder/'mathematical-planning-format-errors.json').write_text(json.dumps(math_planner.invalid_outputs,ensure_ascii=False,indent=2),encoding='utf-8')
                 math_planner.close()
-            self.store.clear_api_key(job_id)
             if math_reviewer is not None:
                 if isinstance(math_reviewer,OllamaClient):
                     (folder/'independent-review-calls.json').write_text(json.dumps(math_reviewer.call_metrics,

@@ -16,7 +16,7 @@ from zhijiang.presentation_templates import PPTTemplate, TEMPLATES, template_pre
 from fastapi.staticfiles import StaticFiles
 
 from zhijiang.config import Settings
-from zhijiang.models import GenerationOptions, JobStatus, Mode, SpeechOptions, VoiceMode, ArtOptions, LearnerProfile
+from zhijiang.models import CourseRevision, GenerationOptions, JobStatus, Mode, SpeechOptions, VoiceMode, ArtOptions, LearnerProfile
 from zhijiang.models import AnimationMode
 from zhijiang.math_planning import math_capabilities
 from zhijiang.visual_planning import PRIMITIVES, CHECKERS, DOMAIN_VALIDATORS, visual_capabilities
@@ -26,7 +26,10 @@ from zhijiang.storage import JobStore
 from zhijiang.speech_preview import preview_info, preview_path
 from zhijiang.runtime_lock import RuntimeLock
 from zhijiang.credentials import LocalCredentials,CredentialError,endpoint
-from zhijiang.courses import CourseLibrary, course_routes, ensure_browser
+from zhijiang.courses import (
+    BROWSER_COOKIE, PRIVATE_CACHE, SESSION_COOKIE, CourseLibrary, _cookie_digest, _same_origin,
+    course_routes, ensure_browser,
+)
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -429,98 +432,172 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         runner.submit(job["id"])
         return job
 
-    @application.get("/api/jobs/{job_id}")
-    def get_job(job_id: str) -> dict:
+    def visible_job(job_id: str, request: Request) -> dict:
         job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "任务不存在。")
+        user = courses.current_user(_cookie_digest(request, SESSION_COOKIE))
+        if job is None or not courses.can_access_job(job_id, user["id"] if user else None):
+            raise HTTPException(404, "任务不存在。", headers=PRIVATE_CACHE)
         return job
 
+    @application.get("/api/jobs/{job_id}")
+    def get_job(job_id: str, request: Request, response: Response) -> dict:
+        response.headers.update(PRIVATE_CACHE)
+        return visible_job(job_id, request)
+
     @application.get("/api/jobs/{job_id}/lesson")
-    def get_lesson(job_id: str) -> dict:
-        if store.get(job_id) is None:
-            raise HTTPException(404, "任务不存在。")
+    def get_lesson(job_id: str, request: Request, response: Response) -> dict:
+        visible_job(job_id, request)
         lesson = store.lesson(job_id)
         if lesson is None:
-            raise HTTPException(409, "课程尚未生成。")
+            raise HTTPException(409, "课程尚未生成。", headers=PRIVATE_CACHE)
+        response.headers.update(PRIVATE_CACHE)
         return lesson.model_dump(mode="json")
 
     @application.get("/api/jobs/{job_id}/video")
-    def get_video(job_id: str) -> FileResponse:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "任务不存在。")
+    def get_video(job_id: str, request: Request) -> FileResponse:
+        job = visible_job(job_id, request)
         path = store.jobs_dir / job_id / "lesson.mp4"
         if job["status"] != JobStatus.COMPLETED or not path.is_file():
             raise HTTPException(409, "视频尚未生成。")
         return FileResponse(path, media_type="video/mp4", filename="LivelyClass-lesson.mp4",
-                            content_disposition_type="inline")
+                            content_disposition_type="inline", headers=PRIVATE_CACHE)
 
     @application.get("/api/jobs/{job_id}/presentation")
-    def get_presentation(job_id: str) -> FileResponse:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "任务不存在。")
+    def get_presentation(job_id: str, request: Request) -> FileResponse:
+        job = visible_job(job_id, request)
         path = store.jobs_dir / job_id / "lesson.pptx"
         if job["status"] != JobStatus.COMPLETED or not path.is_file():
             raise HTTPException(409, "PPT 课件尚未生成。")
         return FileResponse(
             path,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            filename="LivelyClass-lesson.pptx",
+            filename="LivelyClass-lesson.pptx", headers=PRIVATE_CACHE,
         )
 
     @application.get("/api/jobs/{job_id}/math-scenes")
-    def get_math_scenes(job_id: str) -> FileResponse:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "任务不存在。")
+    def get_math_scenes(job_id: str, request: Request) -> FileResponse:
+        job = visible_job(job_id, request)
         path = store.jobs_dir / job_id / "math-scenes.json"
         if job["status"] != JobStatus.COMPLETED or not path.is_file():
             raise HTTPException(409, "数学场景数据尚未生成。")
-        return FileResponse(path, media_type="application/json", filename="math-scenes.json")
+        return FileResponse(path, media_type="application/json", filename="math-scenes.json", headers=PRIVATE_CACHE)
 
     @application.get("/api/jobs/{job_id}/scenes")
-    def get_scenes(job_id: str) -> FileResponse:
-        job=store.get(job_id)
-        if job is None:
-            raise HTTPException(404,"任务不存在。")
+    def get_scenes(job_id: str, request: Request) -> FileResponse:
+        job = visible_job(job_id, request)
         folder=store.jobs_dir/job_id
         path=folder/"scene-data.json"
         if not path.is_file():
             path=folder/"math-scenes.json"
         if job["status"]!=JobStatus.COMPLETED or not path.is_file():
             raise HTTPException(409,"教学场景数据尚未生成。")
-        return FileResponse(path,media_type="application/json",filename="teaching-scenes.json")
+        return FileResponse(path,media_type="application/json",filename="teaching-scenes.json", headers=PRIVATE_CACHE)
 
     @application.get('/api/jobs/{job_id}/subtitles')
-    def get_source_subtitles(job_id: str, format: Literal['srt','vtt','json']='srt'):
-        return source_artifact(job_id, 'subtitles.'+format,
+    def get_source_subtitles(job_id: str, request: Request, format: Literal['srt','vtt','json']='srt'):
+        return source_artifact(job_id, request, 'subtitles.'+format,
             {'srt':'application/x-subrip','vtt':'text/vtt','json':'application/json'}[format])
 
     @application.get('/api/jobs/{job_id}/transcript')
-    def get_source_transcript(job_id: str):
-        return source_artifact(job_id, 'source-transcript.txt', 'text/plain')
+    def get_source_transcript(job_id: str, request: Request):
+        return source_artifact(job_id, request, 'source-transcript.txt', 'text/plain')
 
     @application.get('/api/jobs/{job_id}/source-coverage')
-    def get_source_coverage(job_id: str):
-        return source_artifact(job_id, 'source-coverage.json', 'application/json')
+    def get_source_coverage(job_id: str, request: Request):
+        return source_artifact(job_id, request, 'source-coverage.json', 'application/json')
 
     @application.get('/api/jobs/{job_id}/learning-plan')
-    def get_learning_plan(job_id: str, format: Literal['md','json']='md'):
-        return source_artifact(job_id, 'learning-plan.'+format,
+    def get_learning_plan(job_id: str, request: Request, format: Literal['md','json']='md'):
+        return source_artifact(job_id, request, 'learning-plan.'+format,
             'application/json' if format == 'json' else 'text/markdown')
 
-    def source_artifact(job_id, name, media_type):
-        job=store.get(job_id)
-        if job is None:raise HTTPException(404, '任务不存在。')
+    def source_artifact(job_id, request, name, media_type):
+        job = visible_job(job_id, request)
         path=store.jobs_dir/job_id/name
         if job['status']!=JobStatus.COMPLETED or not path.is_file():
             raise HTTPException(409, '请求的课程附件尚未完成。')
-        return FileResponse(path, media_type=media_type, filename=name)
+        return FileResponse(path, media_type=media_type, filename=name, headers=PRIVATE_CACHE)
+
+    def require_job_owner(request: Request, job_id: str) -> bytes:
+        _same_origin(request)
+        owner = _cookie_digest(request, BROWSER_COOKIE)
+        if owner is None or store.browser_owner(job_id) != owner:
+            raise HTTPException(404, "任务不存在。")
+        return owner
+
+    def revision_options(job, prompt, llm_api_key, tts_api_key, image_api_key, video_api_key, remote_consent):
+        from zhijiang.generated_media import art_is_remote
+
+        options = store.get_options(job["id"])
+        model = model_options(settings, options.provider, options.base_url, options.model,
+                              llm_api_key or options.api_key, prompt, credentials)
+        options.api_key = model.api_key
+        options.prompt = model.prompt
+        configure_source_options(options, {
+            "mode": Mode.AI, "narration_mode": options.narration_mode,
+            "image_api_key": image_api_key, "video_api_key": video_api_key,
+        }, options)
+        voice = store.get_speech_options(job["id"])
+        if job["voice_mode"] == VoiceMode.AI:
+            voice = speech_options(settings, voice.base_url, voice.model, voice.voice,
+                                   tts_api_key or voice.api_key, credentials)
+        external_text = any(Settings.model_is_remote(options.provider, options.base_url, name)
+                            for name in (options.model, options.review_model, options.math_model) if name)
+        external_voice = job["voice_mode"] == VoiceMode.AI and not Settings._is_loopback(voice.base_url)
+        consent = job["remote_consent"] if remote_consent is None else remote_consent
+        if (external_text or external_voice or art_is_remote(options.art)) and not consent:
+            raise HTTPException(400, "调用外部服务前须同意发送所需的课程内容。")
+        return options, voice, consent
+
+    @application.post("/api/jobs/{job_id}/revise", status_code=202)
+    def revise_job(
+        job_id: str,
+        request: Request,
+        custom_prompt: Annotated[str, Form()],
+        llm_api_key: Annotated[str, Form()] = "",
+        tts_api_key: Annotated[str, Form()] = "",
+        image_api_key: Annotated[str, Form(max_length=2000)] = "",
+        video_api_key: Annotated[str, Form(max_length=2000)] = "",
+        remote_consent: Annotated[bool | None, Form()] = None,
+    ) -> dict:
+        custom_prompt = custom_prompt.strip()
+        if not custom_prompt:
+            raise HTTPException(400, "请输入课程修改要求。")
+        with courses.archive_lock:
+            owner = require_job_owner(request, job_id)
+            job = visible_job(job_id, request)
+            if job["status"] != JobStatus.COMPLETED:
+                raise HTTPException(409, "课程完成后可以继续修改。")
+            if job["mode"] != Mode.AI:
+                raise HTTPException(409, "对话修改需要 AI 生成的课程。")
+            lesson = store.lesson(job_id)
+            if lesson is None:
+                raise HTTPException(409, "上一版课程内容已丢失，请重新生成。")
+            try:
+                pdf = (store.jobs_dir / job_id / "source.pdf").read_bytes()
+            except FileNotFoundError as exc:
+                raise HTTPException(409, "原始 PDF 已丢失，请重新上传。") from exc
+
+            previous_prompt = job["model_settings"].get("prompt", "")
+            try:
+                original_prompt = (store.revision_context(job_id).original_request
+                                   if job["parent_job_id"] else previous_prompt)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(409, "上一版课程上下文已丢失，请从较早版本重新发起修改。") from exc
+            options, voice, consent = revision_options(
+                job, custom_prompt, llm_api_key, tts_api_key, image_api_key, video_api_key, remote_consent,
+            )
+            context = CourseRevision(
+                lesson=lesson, original_request=original_prompt, previous_request=previous_prompt,
+            )
+            revision = store.create(job["filename"], Mode.AI, VoiceMode(job["voice_mode"]),
+                                    job["rights_confirmed"], consent, pdf, options, voice,
+                                    browser_owner=owner, revision=(job_id, context))
+        runner.submit(revision["id"])
+        return revision
 
     @application.post("/api/jobs/{job_id}/retry", status_code=202)
-    def retry_job(job_id: str, llm_api_key: Annotated[str, Form()] = "",
+    def retry_job(job_id: str, request: Request, llm_api_key: Annotated[str, Form()] = "",
                   tts_api_key: Annotated[str, Form()] = "",
                   mode: Annotated[Mode | None, Form()] = None,
                   voice_mode: Annotated[VoiceMode | None, Form()] = None,
@@ -555,11 +632,26 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
                   tts_voice: Annotated[str | None, Form()] = None,
                   replace_settings: Annotated[bool, Form()] = False,
                   remote_consent: Annotated[bool | None, Form()] = None) -> dict:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "任务不存在。")
+        job = visible_job(job_id, request)
+        if job["parent_job_id"]:
+            require_job_owner(request, job_id)
         if job["status"] != JobStatus.FAILED:
             raise HTTPException(409, "只有失败任务可以重新生成。")
+        if job["parent_job_id"]:
+            with courses.archive_lock:
+                if not (store.jobs_dir / job_id / "source.pdf").is_file():
+                    raise HTTPException(409, "原始 PDF 已丢失，请重新上传。")
+                options, voice, consent = revision_options(
+                    job, store.get_options(job_id).prompt, llm_api_key, tts_api_key,
+                    image_api_key, video_api_key, remote_consent,
+                )
+                if not store.retry(job_id, options=options, speech_options=voice, remote_consent=consent):
+                    raise HTTPException(409, "任务状态已改变，请刷新页面。")
+                store.set_api_key(job_id, options.api_key)
+                store.set_tts_api_key(job_id, voice.api_key)
+                store.set_art_api_keys(job_id, options.art)
+            runner.submit(job_id)
+            return store.get(job_id)
         mode = mode or Mode(job["mode"])
         voice_mode = voice_mode or VoiceMode(job["voice_mode"])
         if mode == Mode.DEMO and animation_mode in {"math", "visual", "geometry"}:
@@ -636,11 +728,9 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         return store.get(job_id)
 
     @application.delete("/api/jobs/{job_id}", status_code=204)
-    def delete_job(job_id: str) -> None:
+    def delete_job(job_id: str, request: Request) -> None:
         with courses.archive_lock:
-            job = store.get(job_id)
-            if job is None:
-                raise HTTPException(404, "任务不存在。")
+            job = visible_job(job_id, request)
             if job["status"] in (JobStatus.QUEUED, JobStatus.RUNNING):
                 raise HTTPException(409, "任务仍在处理中，请完成后再删除。")
             folder = (store.jobs_dir / job_id).resolve()

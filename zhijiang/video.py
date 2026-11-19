@@ -10,6 +10,7 @@ from pathlib import Path
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
 
+from zhijiang.fonts import chinese_font
 from zhijiang.models import Lesson, LessonSegment, Mode
 
 
@@ -28,12 +29,10 @@ class VideoError(RuntimeError):
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    names = ["msyhbd.ttc" if bold else "msyh.ttc", "simhei.ttf"]
-    for name in names:
-        path = Path("C:/Windows/Fonts") / name
-        if path.is_file():
-            return ImageFont.truetype(str(path), size)
-    raise VideoError("未找到中文字体；首版 Windows Demo 需要微软雅黑或黑体。")
+    font = chinese_font(size, bold=bold)
+    if font is None:
+        raise VideoError("未找到用于课程渲染的中文字体，请安装中文字体后重试。")
+    return font
 
 
 def _wrapped(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,

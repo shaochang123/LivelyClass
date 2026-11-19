@@ -11,6 +11,7 @@
   const signOut = find("#logout-button");
   const accountName = find("#course-account");
   if (!personalList || !communityList || !saveButton || !shareButton) return;
+  let account;
 
   function element(tag, className = "", text = "") {
     const node = document.createElement(tag);
@@ -23,6 +24,17 @@
     const node = element("button", className, label);
     node.type = "button";
     return node;
+  }
+
+  function icon(path) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const outline = document.createElementNS(ns, "path");
+    outline.setAttribute("d", path);
+    svg.append(outline);
+    return svg;
   }
 
   async function request(path, method = "GET", body) {
@@ -42,12 +54,12 @@
     return json;
   }
 
-  const storageKey = id => `livelyclass-study:${id}`;
+  const storageKey = (id, user = account) => `livelyclass-study:v2:${user?.id ?? "guest"}:${id}`;
 
-  function readStudy(id) {
+  function readStudy(id, user = account) {
     const empty = {position: 0, duration: 0, highlights: [], checked: {}};
     try {
-      const record = JSON.parse(localStorage.getItem(storageKey(id)));
+      const record = JSON.parse(localStorage.getItem(storageKey(id, user)));
       if (!record) return empty;
       return {
         position: Math.max(0, Number(record.position) || 0),
@@ -63,9 +75,9 @@
   }
 
   let storageError = false;
-  function writeStudy(id, study) {
+  function writeStudy(id, study, user) {
     try {
-      localStorage.setItem(storageKey(id), JSON.stringify(study));
+      localStorage.setItem(storageKey(id, user), JSON.stringify(study));
     } catch {
       if (!storageError) showNotice("浏览器暂时无法保存学习记录。");
       storageError = true;
@@ -93,7 +105,7 @@
   }
 
   const listState = {
-    "my-courses": {root: personalList, path: "/api/courses/mine", generation: 0, courses: null},
+    "my-courses": {root: personalList, path: "/api/courses/mine", generation: 0, courses: null, legacyCount: 0},
     community: {root: communityList, path: "/api/community/courses", generation: 0, courses: null},
   };
 
@@ -133,6 +145,23 @@
     return meter;
   }
 
+  const viewFormat = new Intl.NumberFormat("zh-CN");
+
+  function labelViewCount(counter, count) {
+    const number = viewFormat.format(count);
+    counter.querySelector(".saved-course-view-count").textContent = number;
+    counter.setAttribute("aria-label", `${number} 次观看`);
+  }
+
+  function updateViewCount(courseId, count) {
+    if (!Number.isFinite(count)) return;
+    const course = listState.community.courses?.find(item => item.id === courseId);
+    if (!course) return;
+    course.view_count = Math.max(course.view_count || 0, count);
+    const counter = communityList.querySelector(`[data-course="${CSS.escape(courseId)}"] .saved-course-views`);
+    if (counter) labelViewCount(counter, course.view_count);
+  }
+
   function courseCard(course, shared) {
     const card = button("", "saved-course-card");
     card.dataset.course = course.id;
@@ -147,7 +176,14 @@
       }
       const author = typeof course.author === "string" ? course.author : course.author?.username;
       meta.textContent = [author, publishingDate].filter(Boolean).join(" · ");
-      copy.append(title, meta);
+      const footer = element("span", "saved-course-footer");
+      const views = element("span", "saved-course-views");
+      views.setAttribute("role", "img");
+      views.append(icon("M9 6.5 18 12l-9 5.5z M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z"),
+        element("span", "saved-course-view-count"));
+      labelViewCount(views, course.view_count || 0);
+      footer.append(meta, views);
+      copy.append(title, footer);
     } else {
       const percent = progressPercent(readStudy(course.id));
       meta.textContent = percent ? `已观看 ${percent}%` : "待学习";
@@ -160,10 +196,20 @@
 
   function renderList(screen, state) {
     const shared = screen === "community";
+    const content = document.createDocumentFragment();
+    if (!shared && state.legacyCount > 0) {
+      const importer = element("div", "course-import");
+      const label = element("p", "", `此浏览器中有 ${state.legacyCount} 节旧课程可导入。`);
+      const action = button("导入旧课程", "course-quiet-button");
+      action.addEventListener("click", () => importCourses(action));
+      importer.append(label, action);
+      content.append(importer);
+    }
     if (state.courses?.length) {
       const grid = element("div", "saved-courses-grid");
       for (const course of state.courses) grid.append(courseCard(course, shared));
-      state.root.replaceChildren(grid);
+      content.append(grid);
+      state.root.replaceChildren(content);
       return;
     }
     const empty = element("div", "saved-courses-empty");
@@ -173,22 +219,89 @@
     const open = button("前往工作台", "course-primary");
     open.addEventListener("click", () => goTo("workspace"));
     empty.append(open);
-    state.root.replaceChildren(empty);
+    content.append(empty);
+    state.root.replaceChildren(content);
+  }
+
+  function renderPersonalGate() {
+    if (account === undefined) {
+      const status = element("p", "lesson-loading", "正在读取登录状态…");
+      status.setAttribute("role", "status");
+      personalList.replaceChildren(status);
+      return;
+    }
+    const empty = element("div", "saved-courses-empty");
+    empty.append(coverArt(null), element("h3", "", "登录后查看我的课程"));
+    const login = button("登录", "course-primary");
+    login.addEventListener("click", () => showLogin("login"));
+    empty.append(login);
+    personalList.replaceChildren(empty);
+  }
+
+  async function importCourses(button) {
+    const user = account;
+    if (!user) return;
+    button.disabled = true;
+    try {
+      const {course_ids: ids} = await request("/api/courses/import-browser", "POST");
+      // The old records exist only in this browser. Move the records for the
+      // courses actually claimed by the authenticated account.
+      try {
+        for (const id of ids) {
+          const oldKey = `livelyclass-study:${id}`;
+          const newKey = storageKey(id, user);
+          const previous = localStorage.getItem(oldKey);
+          if (!previous) continue;
+          if (!localStorage.getItem(newKey)) localStorage.setItem(newKey, previous);
+          localStorage.removeItem(oldKey);
+        }
+      } catch { /* The course transfer has already completed on the server. */ }
+      if (account?.id !== user.id) return;
+      await refresh("my-courses");
+      if (account?.id === user.id) showNotice(ids.length ? `已导入 ${ids.length} 节课程` : "此浏览器的旧课程已处理");
+    } catch (error) {
+      if (account?.id !== user.id) return;
+      if (error.status === 401) {
+        setAccount(null);
+        showLogin("login");
+      } else showNotice(error.message);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function refresh(screen) {
     const state = listState[screen];
     if (!state) return;
     const generation = ++state.generation;
+    const personal = screen === "my-courses";
+    if (personal && !account) {
+      state.root.removeAttribute("aria-busy");
+      renderPersonalGate();
+      return;
+    }
     if (state.courses === null) state.root.setAttribute("aria-busy", "true");
     try {
-      const {courses} = await request(state.path);
+      const {courses, legacy_count: legacyCount = 0} = await request(state.path);
       if (generation !== state.generation) return;
-      if (state.courses !== null && JSON.stringify(courses) === JSON.stringify(state.courses)) return;
+      if (screen === "community" && state.courses) {
+        const previousCounts = new Map(state.courses.map(course => [course.id, course.view_count || 0]));
+        for (const course of courses) {
+          course.view_count = Math.max(course.view_count || 0, previousCounts.get(course.id) || 0);
+        }
+      }
+      if (state.courses !== null && (!personal || legacyCount === state.legacyCount)
+          && JSON.stringify(courses) === JSON.stringify(state.courses)) return;
       state.courses = courses;
+      if (personal) state.legacyCount = legacyCount;
       renderList(screen, state);
     } catch (error) {
-      if (generation !== state.generation || state.courses !== null) return;
+      if (generation !== state.generation) return;
+      if (personal && error.status === 401) {
+        setAccount(null);
+        return;
+      }
+      if (state.courses !== null) return;
       const failure = element("div", "saved-courses-empty");
       const retry = button("重新加载", "course-primary");
       retry.addEventListener("click", () => refresh(screen));
@@ -237,6 +350,10 @@
   window.addEventListener("pagehide", () => activeLesson?.flush());
 
   async function showCourse(summary, shared) {
+    if (!shared && !account) {
+      showLogin("login");
+      return;
+    }
     leaveCourse();
     const generation = ++courseRequest;
     courseTitle.textContent = summary.title;
@@ -251,9 +368,15 @@
       const course = await request(`${prefix}/${encodeURIComponent(summary.id)}`);
       if (!courseDialog.open || generation !== courseRequest) return;
       courseTitle.textContent = course.title;
-      activeLesson = renderLesson(course);
+      if (shared) updateViewCount(course.id, course.view_count);
+      activeLesson = renderLesson(course, shared);
     } catch (error) {
       if (!courseDialog.open || generation !== courseRequest) return;
+      if (!shared && error.status === 401) {
+        setAccount(null);
+        showLogin("login");
+        return;
+      }
       const retry = button("重试", "course-primary");
       retry.addEventListener("click", () => showCourse(summary, shared));
       busy.replaceChildren(element("span", "", error.message), retry);
@@ -345,7 +468,15 @@
     const panel = element("section", "lesson-transcript");
     const header = element("header", "lesson-transcript-header");
     const tools = element("div", "lesson-transcript-tools");
-    const highlight = button("高亮", "course-quiet-button");
+    const highlight = button("", "lesson-highlight-button lesson-highlight-header");
+    const floatingHighlight = button("", "lesson-highlight-button lesson-highlight-float");
+    const markerPath = "m15.5 3.5 5 5L10 19H5v-5zM13 6l5 5M3 22h10";
+    const highlightLabel = element("span", "", "高亮");
+    const floatingLabel = element("span", "", "高亮");
+    highlight.append(icon(markerPath), highlightLabel);
+    floatingHighlight.append(icon(markerPath), floatingLabel);
+    floatingHighlight.tabIndex = -1;
+    floatingHighlight.hidden = true;
     const follow = button("跟随播放", "course-quiet-button");
     highlight.disabled = true;
     follow.setAttribute("aria-pressed", "true");
@@ -432,15 +563,59 @@
 
     let picked = null;
     const hasHighlight = ([from,to]) => study.highlights.some(([start, end]) => start <= from && end >= to);
-    function updateSelection() {
-      picked = selectionRange();
-      highlight.textContent = picked && hasHighlight(picked) ? "取消高亮" : "高亮";
-      highlight.disabled = !picked;
+    const listeners = new AbortController();
+    const options = {signal: listeners.signal};
+    let selecting = false;
+    let touchSelection = matchMedia("(pointer: coarse)").matches;
+
+    function placeHighlight() {
+      const selection = document.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      if (!picked || selecting || !range || range.collapsed || !lines.contains(range.commonAncestorContainer)) {
+        floatingHighlight.hidden = true;
+        return;
+      }
+
+      const viewport = dialogContent.getBoundingClientRect();
+      const transcript = scroll.getBoundingClientRect();
+      const visible = Array.from(range.getClientRects()).filter(rect => rect.width > 0 &&
+        rect.bottom > Math.max(viewport.top, transcript.top) && rect.top < Math.min(viewport.bottom, transcript.bottom));
+      if (!visible.length) {
+        floatingHighlight.hidden = true;
+        return;
+      }
+
+      const top = Math.max(visible[0].top, transcript.top, viewport.top);
+      const last = visible.at(-1);
+      const bottom = Math.min(last.bottom, transcript.bottom, viewport.bottom);
+      const center = (visible[0].left + visible[0].right) / 2;
+      const bounds = courseDialog.getBoundingClientRect();
+      floatingHighlight.hidden = false;
+      const width = floatingHighlight.offsetWidth;
+      const height = floatingHighlight.offsetHeight;
+      const left = Math.min(Math.max(center - width / 2, viewport.left + 8), viewport.right - width - 8);
+      const above = top - height - (touchSelection ? 56 : 12);
+      const below = bottom + (touchSelection ? 36 : 12);
+      let y = touchSelection || above < viewport.top + 5 ? below : above;
+      if (y + height > viewport.bottom - 5) y = above;
+      if (y < viewport.top + 5 || y + height > viewport.bottom - 5) {
+        floatingHighlight.hidden = true;
+        return;
+      }
+      floatingHighlight.style.left = `${left - bounds.left - courseDialog.clientLeft}px`;
+      floatingHighlight.style.top = `${y - bounds.top - courseDialog.clientTop}px`;
     }
 
-    // Preserve the selected text while the toolbar button receives a pointer action.
-    highlight.addEventListener("pointerdown", event => event.preventDefault());
-    highlight.addEventListener("click", () => {
+    function updateSelection() {
+      const selected = selectionRange();
+      if (selected || document.activeElement !== highlight) picked = selected;
+      const label = picked && hasHighlight(picked) ? "取消高亮" : "高亮";
+      highlightLabel.textContent = floatingLabel.textContent = label;
+      highlight.disabled = !picked;
+      placeHighlight();
+    }
+
+    function applyHighlight() {
       if (!picked) return;
       const [start, end] = picked;
       if (hasHighlight(picked)) {
@@ -455,11 +630,35 @@
         study.highlights = mergeRanges([...study.highlights, [start,end]]);
       }
       document.getSelection()?.removeAllRanges();
+      picked = null;
       updateSelection();
       renderMarks();
       persist();
+    }
+
+    // Preserve the text selection while either control receives a pointer action.
+    for (const control of [highlight, floatingHighlight]) {
+      control.addEventListener("pointerdown", event => event.preventDefault());
+      control.addEventListener("click", applyHighlight);
+    }
+    highlight.addEventListener("blur", updateSelection);
+    lines.addEventListener("pointerdown", event => {
+      touchSelection = event.pointerType === "touch";
+      selecting = !touchSelection && event.button === 0;
+      placeHighlight();
     });
-    document.addEventListener("selectionchange", updateSelection);
+    for (const event of ["pointerup", "pointercancel"]) {
+      document.addEventListener(event, () => {
+        if (!selecting) return;
+        selecting = false;
+        updateSelection();
+      }, options);
+    }
+    document.addEventListener("selectionchange", updateSelection, options);
+    scroll.addEventListener("scroll", placeHighlight, options);
+    dialogContent.addEventListener("scroll", placeHighlight, options);
+    window.addEventListener("resize", placeHighlight, options);
+    courseDialog.append(floatingHighlight);
 
     let currentCue = null;
     let following = true;
@@ -505,12 +704,16 @@
       currentCue?.row.setAttribute("aria-current","true");
       scrollToCue();
     }
-    return {panel, update, stop: () => document.removeEventListener("selectionchange", updateSelection)};
+    return {panel, update, stop: () => {
+      listeners.abort();
+      floatingHighlight.remove();
+    }};
   }
 
-  function renderLesson(course) {
-    const study = readStudy(course.id);
-    const persist = () => writeStudy(course.id, study);
+  function renderLesson(course, shared) {
+    const user = account || null;
+    const study = readStudy(course.id, user);
+    const persist = () => writeStudy(course.id, study, user);
     const layout = element("div", "lesson-detail-grid");
     const player = element("section", "lesson-player");
     const video = element("video", "saved-lesson-video");
@@ -521,6 +724,23 @@
     if (course.assets?.cover) video.poster = course.assets.cover;
     if (course.assets?.video) video.src = course.assets.video;
     else video.hidden = true;
+    if (shared && course.assets?.video) {
+      video.addEventListener("playing", async () => {
+        const playbackId = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+          value => value.toString(16).padStart(2, "0")).join("");
+        const path = `/api/community/courses/${encodeURIComponent(course.id)}/views`;
+        const body = {playback_id: playbackId};
+        try {
+          const {view_count} = await request(path, "POST", body).catch(error => {
+            if (error.status && error.status < 500) throw error;
+            return request(path, "POST", body);
+          });
+          updateViewCount(course.id, view_count);
+        } catch {
+          // Failure to register a view must never interrupt video playback.
+        }
+      }, {once: true});
+    }
     const downloads = element("div", "lesson-downloads");
     downloads.append(downloadLink("保存 PPTX", course.assets?.presentation), downloadLink("保存视频", course.assets?.video, true));
     player.append(video, downloads);
@@ -569,7 +789,6 @@
 
   let job = null;
   let lessonTitle = "";
-  let account = null;
   let saving = false;
   function setJob(next, lesson) {
     if (next?.id !== job?.id) lessonTitle = "";
@@ -578,21 +797,41 @@
     saveButton.hidden = shareButton.hidden = job?.status !== "completed";
   }
 
-  saveButton.addEventListener("click", async () => {
-    if (job?.status !== "completed" || saving) return;
+  function signInToSave(id) {
+    showLogin("login", () => {
+      auth.close();
+      saveCourse(id);
+    }, "登录后，这节课会保存到你的账号。");
+  }
+
+  async function saveCourse(id) {
+    if (saving) return;
+    const user = account;
+    if (!user) {
+      signInToSave(id);
+      return;
+    }
     saving = true;
     saveButton.disabled = true;
-    const id = job.id;
     try {
       await request(`/api/jobs/${id}/save`, "POST");
+      if (account?.id !== user.id) return;
       await refresh("my-courses");
-      showNotice("已保存到我的课程", "查看", () => goTo("my-courses"));
+      if (account?.id === user.id) showNotice("已保存到我的课程", "查看", () => goTo("my-courses"));
     } catch (error) {
-      showNotice(error.message);
+      if (account?.id !== user.id) return;
+      if (error.status === 401) {
+        setAccount(null);
+        signInToSave(id);
+      } else showNotice(error.message);
     } finally {
       saving = false;
       saveButton.disabled = false;
     }
+  }
+
+  saveButton.addEventListener("click", () => {
+    if (job?.status === "completed") saveCourse(job.id);
   });
 
   const auth = element("dialog", "course-auth-dialog");
@@ -609,8 +848,26 @@
   closeAuth.addEventListener("click", () => auth.close());
   let authRender = 0;
   let sessionVersion = 0;
+  let sessionRead = 0;
+  const sessionUpdates = typeof BroadcastChannel === "function" ? new BroadcastChannel("livelyclass-session") : null;
 
   function setAccount(user) {
+    const previous = account;
+    const changed = previous === undefined || previous?.id !== user?.id;
+    if (changed) {
+      if (courseDialog.open) courseDialog.close();
+      leaveCourse();
+      if (previous) {
+        if (auth.open) auth.close();
+        window.LivelyWorkspace?.clearConversation();
+      }
+      const state = listState["my-courses"];
+      ++state.generation;
+      state.courses = null;
+      state.legacyCount = 0;
+      personalList.replaceChildren();
+      notice.hidden = true;
+    }
     account = user;
     if (signIn) signIn.hidden = Boolean(user);
     if (signUp) signUp.hidden = Boolean(user);
@@ -619,12 +876,21 @@
       accountName.textContent = user?.username || "";
       accountName.hidden = !user;
     }
+    if (changed) refresh("my-courses");
   }
 
-  const bootSession = sessionVersion;
-  request("/api/auth/session").then(({user}) => {
-    if (bootSession === sessionVersion) setAccount(user);
-  }).catch(() => {});
+  async function readSession() {
+    const version = sessionVersion;
+    const read = ++sessionRead;
+    try {
+      const {user} = await request("/api/auth/session");
+      if (version === sessionVersion && read === sessionRead) setAccount(user);
+    } catch {
+      if (version === sessionVersion && read === sessionRead && account === undefined) setAccount(null);
+    }
+  }
+  sessionUpdates?.addEventListener("message", readSession);
+  window.addEventListener("pageshow", event => { if (event.persisted) readSession(); });
 
   function showAuthPanel(title) {
     const generation = ++authRender;
@@ -641,9 +907,9 @@
     return status;
   }
 
-  function showLogin(mode, publication = null) {
+  function showLogin(mode, afterLogin = null, note = "") {
     const registering = mode === "register";
-    const generation = showAuthPanel(registering ? "注册社区账号" : "登录共享社区");
+    const generation = showAuthPanel(registering ? "注册 Lively Class 账号" : "登录 Lively Class");
     const form = element("form", "course-auth-form");
     const usernameLabel = element("label", "", "用户名");
     const username = element("input");
@@ -672,8 +938,8 @@
     const errorBox = authError();
     form.append(usernameLabel, passwordLabel, errorBox, submit);
     const switchMode = button(registering ? "已有账号？登录" : "还没有账号？注册", "course-auth-switch");
-    switchMode.addEventListener("click", () => showLogin(registering ? "login" : "register", publication));
-    if (publication) authBody.append(element("p", "course-auth-note", "登录后即可确认分享此课程。"));
+    switchMode.addEventListener("click", () => showLogin(registering ? "login" : "register", afterLogin, note));
+    if (note) authBody.append(element("p", "course-auth-note", note));
     authBody.append(form, switchMode);
     username.focus();
     form.addEventListener("submit", async event => {
@@ -684,9 +950,11 @@
       errorBox.hidden = true;
       try {
         const {user} = await request(`/api/auth/${mode}`, "POST", {username: username.value.trim(), password: password.value});
-        if (requestVersion === sessionVersion) setAccount(user);
+        if (requestVersion !== sessionVersion) return;
+        setAccount(user);
+        sessionUpdates?.postMessage(null);
         if (!auth.open || generation !== authRender) return;
-        if (publication) showPublication(publication);
+        if (afterLogin) afterLogin();
         else auth.close();
       } catch (error) {
         errorBox.textContent = error.message;
@@ -696,6 +964,10 @@
         switchMode.disabled = false;
       }
     });
+  }
+
+  function signInToPublish(publication) {
+    showLogin("login", () => showPublication(publication), "登录后即可确认分享此课程。");
   }
 
   function showPublication(publication) {
@@ -724,7 +996,7 @@
         if (!auth.open || generation !== authRender) return;
         if (error.status === 401) {
           setAccount(null);
-          showLogin("login", publication);
+          signInToPublish(publication);
         } else {
           errorBox.textContent = error.message;
           errorBox.hidden = false;
@@ -739,10 +1011,10 @@
     if (job?.status !== "completed") return;
     const publication = {
       id: job.id,
-      title: lessonTitle || find("#lesson-title")?.textContent || job.filename || "课程",
+      title: lessonTitle || job.filename || "课程",
     };
     if (account) showPublication(publication);
-    else showLogin("login", publication);
+    else signInToPublish(publication);
   });
   signIn?.addEventListener("click", () => showLogin("login"));
   signUp?.addEventListener("click", () => showLogin("register"));
@@ -752,6 +1024,7 @@
     try {
       const {user} = await request("/api/auth/logout", "POST");
       setAccount(user);
+      sessionUpdates?.postMessage(null);
     } catch (error) {
       showNotice(error.message);
     } finally {
@@ -762,4 +1035,5 @@
   window.LivelyCourses = {setJob, refresh};
   refresh("my-courses");
   refresh("community");
+  readSession();
 })();

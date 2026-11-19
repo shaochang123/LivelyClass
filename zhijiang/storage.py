@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from zhijiang.models import GenerationOptions, JobStatus, Lesson, Mode, SpeechOptions, VoiceMode
+from zhijiang.models import CourseRevision, GenerationOptions, JobStatus, Lesson, Mode, SpeechOptions, VoiceMode
 
 
 def utc_now() -> str:
@@ -52,7 +52,8 @@ class JobStore:
                     updated_at TEXT NOT NULL,
                     options_json TEXT NOT NULL DEFAULT '{}',
                     speech_options_json TEXT NOT NULL DEFAULT '{}',
-                    browser_owner BLOB
+                    browser_owner BLOB,
+                    parent_job_id TEXT
                 )"""
             )
             columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
@@ -62,6 +63,8 @@ class JobStore:
                 connection.execute("ALTER TABLE jobs ADD COLUMN speech_options_json TEXT NOT NULL DEFAULT '{}'")
             if "browser_owner" not in columns:
                 connection.execute("ALTER TABLE jobs ADD COLUMN browser_owner BLOB")
+            if "parent_job_id" not in columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN parent_job_id TEXT")
 
     def recover_interrupted(self) -> None:
         """Recover stale jobs once at service startup, never on import/read."""
@@ -91,25 +94,37 @@ class JobStore:
         speech_options: SpeechOptions | None = None,
         *,
         browser_owner: bytes | None = None,
+        revision: tuple[str, CourseRevision] | None = None,
     ) -> dict:
         job_id = uuid.uuid4().hex
         folder = self.jobs_dir / job_id
         folder.mkdir()
-        (folder / "source.pdf").write_bytes(pdf)
-        now = utc_now()
-        with self._connect() as connection:
-            connection.execute(
-                "INSERT INTO jobs (id, filename, mode, voice_mode, rights_confirmed, "
-                "remote_consent, status, stage, progress, error, lesson_json, "
-                "created_at, updated_at, options_json, speech_options_json, browser_owner) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    job_id, filename, mode, voice_mode, int(rights_confirmed),
-                    int(remote_consent), JobStatus.QUEUED, "queued", 0, None,
-                    None, now, now, (options or GenerationOptions()).model_dump_json(),
-                    (speech_options or SpeechOptions()).model_dump_json(), browser_owner,
-                ),
-            )
+        parent_id = None
+        try:
+            (folder / "source.pdf").write_bytes(pdf)
+            if revision:
+                parent_id, context = revision
+                (folder / "revision-context.json").write_text(context.model_dump_json(), encoding="utf-8")
+                parsed_source = self.jobs_dir / parent_id / "parsed-source.json"
+                if parsed_source.is_file():
+                    shutil.copyfile(parsed_source, folder / parsed_source.name)
+            now = utc_now()
+            with self._connect() as connection:
+                connection.execute(
+                    "INSERT INTO jobs (id, filename, mode, voice_mode, rights_confirmed, "
+                    "remote_consent, status, stage, progress, error, lesson_json, "
+                    "created_at, updated_at, options_json, speech_options_json, browser_owner, parent_job_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        job_id, filename, mode, voice_mode, int(rights_confirmed),
+                        int(remote_consent), JobStatus.QUEUED, "queued", 0, None,
+                        None, now, now, (options or GenerationOptions()).model_dump_json(),
+                        (speech_options or SpeechOptions()).model_dump_json(), browser_owner, parent_id,
+                    ),
+                )
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
         if options and options.api_key:
             self._api_keys[job_id] = options.api_key
         if speech_options and speech_options.api_key:
@@ -117,6 +132,10 @@ class JobStore:
         if options:
             self.set_art_api_keys(job_id, options.art)
         return self.get(job_id)  # type: ignore[return-value]
+
+    def revision_context(self, job_id: str) -> CourseRevision:
+        path = self.jobs_dir / job_id / "revision-context.json"
+        return CourseRevision.model_validate_json(path.read_text(encoding="utf-8"))
 
     def get_options(self, job_id: str) -> GenerationOptions:
         with self._connect() as connection:
