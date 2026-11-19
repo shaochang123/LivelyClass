@@ -50,6 +50,7 @@ service-account*.json
 /dist/
 /build/
 /demo/
+/media/
 /submission/
 /docs/images/
 uploads/

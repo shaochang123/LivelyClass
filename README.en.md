@@ -37,6 +37,14 @@ Jimeng text-to-image 3.0 has a direct **Jimeng (API Key)** option: use `https://
 
 ## Quick start (Windows)
 
+### Two-textbook premium demo (standalone)
+
+`scripts/premium_demo.py` is a separate showcase runner for the selected *Lines and Circles* and *Autumn Evening in the Mountains* readings. It does not change the website's model restrictions. This explicitly authorized demo uses the official DeepSeek `deepseek-flash` endpoint for source understanding, deck planning and visual review, with role-specific `high/max` effort and JSON output controls. Images and speech remain local. Generation and actual-effect review have separate records; selected showcases are not a broad textbook evaluation.
+
+Run `scripts/premium_demo_inputs.py` to freeze the inputs, source units, A–I prompts and learner profiles, followed by `scripts/premium_demo.py preflight` and `scripts/premium_demo.py plan`. Keys come from the local encrypted store or a private `--private-config` file and are excluded from deliverables. `scripts/premium_demo_images.py` exposes a loopback Images gateway on `8793`, using official SHA-256-verified FLUX 3 Image Klein INT8 weights, 16 steps, reference images and three seeded candidates. `scripts/premium_demo_tts.py` exposes local native-48kHz VoxCPM2 speech on `8794`; an original synthetic voice is auditioned and frozen first. Users must obtain repository access before weight downloads, which do not involve cloud inference.
+
+The mathematics interpreter accepts declarative actions only, computes actual circle–line intersections and perpendicular feet, and preserves tangency pauses and the textbook example's identities. Humanities uses locally generated illustrations with smooth camera movement, without claiming animated characters. Both paths bind frozen source text to measured audio samples. Character-proportional timing inside an utterance is identified as approximate, not word-level forced alignment. Slides are static PPTX files; motion is delivered as a separate MP4. Downloads, model calls, first failures, image choices, audio, review and packaging records stay in Git-ignored `data/premium-demo-20261113/`. Missing real dependencies stop the run rather than producing placeholder success.
+
 Run from the repository root:
 
 ```powershell

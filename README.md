@@ -37,6 +37,14 @@ API创建与重试继续兼容 `style_mode=subject|template|adaptive|comic` 及�
 
 ## 快速开始（Windows）
 
+### 两教材精品 Demo（独立运行）
+
+`scripts/premium_demo.py` 是独立展示运行器，固定使用《直线与圆》与《山居秋暝》选读，不改变网页任务的模型限制。此 Demo 经显式授权使用 DeepSeek 官方 `deepseek-flash` 做理解、课件规划和看图复核，分阶段发送 `high/max` 思考强度与 JSON 输出参数。绘图与语音仍在本机运行。完整生成与实际效果验收分开记录，预选案例不作为广泛教材评测。
+
+先运行 `scripts/premium_demo_inputs.py` 冻结输入、原文单元、A—I 提示词及学习计划参数，再运行 `scripts/premium_demo.py preflight` 和 `scripts/premium_demo.py plan`。密钥从本机加密凭据或 `--private-config` 指定的私有配置读取，不写入产物。`scripts/premium_demo_images.py` 提供回环地址 `8793` 的 Images 网关，使用经官方 SHA-256 核对的 FLUX 3 Image Klein INT8、16步、参考图和三个种子候选；`scripts/premium_demo_tts.py` 提供 `8794` 的 VoxCPM2 原生48kHz语音网关，先试听并冻结原创合成声线。权重需用户自行完成仓库访问授权，下载不等于云推理。
+
+数学运行器只执行声明式动作，实际求圆线交点和垂足，保留相切停顿与原例的边、垂足对应。人文使用本地生成的插画与平稳镜头运动，不标为人物动画。两路均按冻结原文和实际音频采样绑定字幕；句内按字符比例估算的字幕时间另行注明，不称为逐词强制对齐。课件是静态PPTX，动态演示是独立MP4。下载、模型调用、首次错误、选图、音轨、复核与最终打包记录保存在 Git 忽略的 `data/premium-demo-20261113/`；未具备真实依赖时停止，不用占位素材冒充完成。
+
 在项目根目录运行：
 
 ```powershell
