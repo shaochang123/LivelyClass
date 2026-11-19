@@ -26,6 +26,7 @@ from zhijiang.storage import JobStore
 from zhijiang.speech_preview import preview_info, preview_path
 from zhijiang.runtime_lock import RuntimeLock
 from zhijiang.credentials import LocalCredentials,CredentialError,endpoint
+from zhijiang.courses import CourseLibrary, course_routes, ensure_browser
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -171,6 +172,7 @@ def speech_options(settings: Settings, base_url: str, model: str, voice: str,
 def create_app(settings: Settings | None = None, runner: JobRunner | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = JobStore(settings.data_dir)
+    courses = CourseLibrary(store)
     credentials=LocalCredentials(settings.data_dir)
     processor = JobProcessor(settings, store)
     runner = runner or JobRunner(processor)
@@ -191,6 +193,8 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
     async def validation_error(request:Request,error:RequestValidationError):
         if request.url.path.startswith('/api/credentials'):
             return JSONResponse(status_code=422,content={'detail':'密钥类型、API 地址或输入格式无效。'})
+        if request.url.path.startswith('/api/auth/'):
+            return JSONResponse(status_code=422,content={'detail':'请填写有效的用户名和 8–128 个字符的密码。'})
         if request.url.path == '/api/speech-preview' and request.method == 'POST':
             return JSONResponse(status_code=422,content={'detail':'语音模型、音色、API 地址或输入格式无效。'})
         return await request_validation_exception_handler(request,error)
@@ -198,10 +202,13 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
     application.state.store = store
     application.state.runner = runner
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    application.include_router(course_routes(courses))
 
     @application.get("/", include_in_schema=False)
-    def home() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    def home(request: Request) -> FileResponse:
+        response = FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "private, no-store"})
+        ensure_browser(request, response, refresh=True)
+        return response
 
     @application.get("/api/config")
     def config() -> dict:
@@ -332,6 +339,8 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
 
     @application.post("/api/jobs", status_code=202)
     async def create_job(
+        request: Request,
+        response: Response,
         file: Annotated[UploadFile, File()],
         rights_confirmed: Annotated[bool, Form()],
         mode: Annotated[Mode, Form()] = Mode.DEMO,
@@ -415,7 +424,8 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
         except PDFError as exc:
             raise HTTPException(400, str(exc)) from exc
         job = store.create(filename, mode, voice_mode, rights_confirmed, remote_consent,
-                           content, options, voice_options)
+                           content, options, voice_options,
+                           browser_owner=ensure_browser(request, response))
         runner.submit(job["id"])
         return job
 
@@ -627,17 +637,18 @@ def create_app(settings: Settings | None = None, runner: JobRunner | None = None
 
     @application.delete("/api/jobs/{job_id}", status_code=204)
     def delete_job(job_id: str) -> None:
-        job = store.get(job_id)
-        if job is None:
-            raise HTTPException(404, "任务不存在。")
-        if job["status"] in (JobStatus.QUEUED, JobStatus.RUNNING):
-            raise HTTPException(409, "任务仍在处理中，请完成后再删除。")
-        folder = (store.jobs_dir / job_id).resolve()
-        root = store.jobs_dir.resolve()
-        if folder == root or not folder.is_relative_to(root):
-            raise HTTPException(400, "无效任务路径。")
-        shutil.rmtree(folder, ignore_errors=False)
-        store.delete(job_id)
+        with courses.archive_lock:
+            job = store.get(job_id)
+            if job is None:
+                raise HTTPException(404, "任务不存在。")
+            if job["status"] in (JobStatus.QUEUED, JobStatus.RUNNING):
+                raise HTTPException(409, "任务仍在处理中，请完成后再删除。")
+            folder = (store.jobs_dir / job_id).resolve()
+            root = store.jobs_dir.resolve()
+            if folder == root or not folder.is_relative_to(root):
+                raise HTTPException(400, "无效任务路径。")
+            shutil.rmtree(folder, ignore_errors=False)
+            store.delete(job_id)
 
     return application
 

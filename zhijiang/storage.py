@@ -51,7 +51,8 @@ class JobStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     options_json TEXT NOT NULL DEFAULT '{}',
-                    speech_options_json TEXT NOT NULL DEFAULT '{}'
+                    speech_options_json TEXT NOT NULL DEFAULT '{}',
+                    browser_owner BLOB
                 )"""
             )
             columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
@@ -59,6 +60,8 @@ class JobStore:
                 connection.execute("ALTER TABLE jobs ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'")
             if "speech_options_json" not in columns:
                 connection.execute("ALTER TABLE jobs ADD COLUMN speech_options_json TEXT NOT NULL DEFAULT '{}'")
+            if "browser_owner" not in columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN browser_owner BLOB")
 
     def recover_interrupted(self) -> None:
         """Recover stale jobs once at service startup, never on import/read."""
@@ -86,6 +89,8 @@ class JobStore:
         pdf: bytes,
         options: GenerationOptions | None = None,
         speech_options: SpeechOptions | None = None,
+        *,
+        browser_owner: bytes | None = None,
     ) -> dict:
         job_id = uuid.uuid4().hex
         folder = self.jobs_dir / job_id
@@ -96,13 +101,13 @@ class JobStore:
             connection.execute(
                 "INSERT INTO jobs (id, filename, mode, voice_mode, rights_confirmed, "
                 "remote_consent, status, stage, progress, error, lesson_json, "
-                "created_at, updated_at, options_json, speech_options_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_at, updated_at, options_json, speech_options_json, browser_owner) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job_id, filename, mode, voice_mode, int(rights_confirmed),
                     int(remote_consent), JobStatus.QUEUED, "queued", 0, None,
                     None, now, now, (options or GenerationOptions()).model_dump_json(),
-                    (speech_options or SpeechOptions()).model_dump_json(),
+                    (speech_options or SpeechOptions()).model_dump_json(), browser_owner,
                 ),
             )
         if options and options.api_key:
@@ -161,6 +166,7 @@ class JobStore:
         if row is None:
             return None
         result = dict(row)
+        result.pop("browser_owner")
         result["rights_confirmed"] = bool(result["rights_confirmed"])
         result["remote_consent"] = bool(result["remote_consent"])
         result["has_lesson"] = result["lesson_json"] is not None
@@ -172,6 +178,11 @@ class JobStore:
         result["model_settings"] = json.loads(result.pop("options_json"))
         result["voice_settings"] = json.loads(result.pop("speech_options_json"))
         return result
+
+    def browser_owner(self, job_id: str) -> bytes | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT browser_owner FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return row["browser_owner"] if row else None
 
     def set_progress(self, job_id: str, stage: str, progress: int) -> None:
         with self._connect() as connection:

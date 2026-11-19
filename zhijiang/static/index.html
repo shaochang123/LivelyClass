@@ -6,196 +6,251 @@
   <meta name="description" content="Lively Class——AI教育Agent：从 PDF 到教学视频与 PPT 课件。">
   <title>Lively Class——AI教育Agent · 从 PDF 到一节课</title>
   <link rel="icon" href="/static/favicon.svg?v=20261021" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=20261021-brand">
+  <link rel="stylesheet" href="/static/styles.css?v=20261119">
+  <link rel="stylesheet" href="/static/screens.css?v=20261119-models">
+  <link rel="stylesheet" href="/static/courses.css?v=20261119">
   <style>[hidden]{display:none!important}</style>
-  <script src="/static/app.js?v=20261021-brand" defer></script>
+  <script src="/static/screens.js?v=20261119-scroll" defer></script>
+  <script src="/static/app.js?v=20261119-models" defer></script>
+  <script src="/static/courses.js?v=20261119" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace">跳到课程工作台</a>
   <div class="page-shell">
-    <header class="site-header">
+    <header class="site-header home-header">
       <div class="header-inner">
-        <a class="brand" href="/" aria-label="Lively Class——AI教育Agent 首页"><span class="brand-icon" aria-hidden="true">L</span><span class="brand-name">Lively Class<strong>——AI教育Agent</strong></span></a>
-        <nav class="primary-nav" aria-label="主导航"><a href="#workspace">课程工作台</a><a href="#course-style-options">自动编排</a><a href="#workflow">生成流程</a></nav>
-        <a class="local-pill" href="#workspace"><span class="pulse"></span>开始创作 <span aria-hidden="true">↗</span></a>
+        <a class="brand" href="#home" aria-label="Lively Class 首页"><span class="brand-icon" aria-hidden="true">L</span><span class="brand-name">Lively Class</span></a>
+        <nav class="primary-nav" aria-label="主导航" hidden>
+          <a href="#home">首页</a>
+          <a href="#workspace">工作台</a>
+          <a href="#my-courses">我的课程</a>
+          <a href="#community">共享社区</a>
+        </nav>
+        <div class="site-account">
+          <span id="course-account" hidden></span>
+          <button id="login-button" type="button">登录</button>
+          <button id="register-button" type="button">注册</button>
+          <button id="logout-button" type="button" hidden>退出</button>
+        </div>
       </div>
     </header>
-    <main>
-      <section class="hero" aria-labelledby="hero-title">
+    <main id="screens">
+      <section id="home" class="screen hero" aria-labelledby="hero-title">
         <div class="hero-inner">
         <div class="hero-copy">
-          <p class="eyebrow">LIVELY CLASS · AI教育Agent</p>
-          <h1 id="hero-title">从一份教材，<br><em>到一堂好课。</em></h1>
-          <p class="hero-description">让知识跃然眼前，让课堂生动起来。上传 PDF，<br class="desktop-break">生成讲解视频与 PPT 课件。</p>
-          <div class="hero-actions"><a class="hero-button" href="#workspace">开始生成 <span aria-hidden="true">→</span></a><a class="hero-link" href="#workflow">了解生成流程 <span aria-hidden="true">↗</span></a></div>
-          <div class="hero-points"><span>教材原文关联</span><span>个性化讲解</span><span>多风格呈现</span></div>
+          <h1 id="hero-title" tabindex="-1">从一份教材，<br><em>到一堂好课。</em></h1>
+          <p class="hero-description">让课堂生动起来。上传 PDF，<br class="desktop-break">生成讲解视频与 PPT 课件。</p>
+          <div class="hero-actions"><a class="hero-button" href="#workspace">开始生成 <span aria-hidden="true">→</span></a></div>
         </div>
         <div class="hero-visual" aria-hidden="true">
           <div class="visual-orbit orbit-one"></div><div class="visual-orbit orbit-two"></div>
           <div class="visual-doc"><span class="document-tag">PDF</span><strong>你的学习资料</strong><div class="doc-line long"></div><div class="doc-line"></div><div class="doc-line short"></div><div class="doc-figure"><i></i><i></i><i></i><i></i></div><div class="doc-line long"></div></div>
-          <div class="visual-video"><div class="visual-toolbar"><span class="window-dots"><i></i><i></i><i></i></span><span>Lively Class</span></div><div class="visual-lesson"><span class="lesson-label">让知识清晰可见</span><svg viewBox="0 0 310 130" xmlns="http://www.w3.org/2000/svg"><path d="M35 105H280M35 20V105" fill="none" stroke="#c4d1e7" stroke-width="1.5"/><path d="M43 91C95 91 87 40 143 47S205 92 272 24" fill="none" stroke="#2868ef" stroke-width="4"/><circle cx="143" cy="47" r="7" fill="#8955d9" stroke="white" stroke-width="3"/><path d="M143 47V105" stroke="#b5a0df" stroke-dasharray="4 4"/><rect x="187" y="7" width="68" height="23" rx="5" fill="#eee8fb"/><text x="221" y="23" text-anchor="middle" font-size="12" fill="#6f46b2">知识图示</text></svg></div><div class="visual-player"><span class="play-ring">▶</span><span class="player-track"><i></i></span><span>MP4 + PPTX</span></div></div>
+          <div class="visual-video"><div class="visual-toolbar"><span class="window-dots"><i></i><i></i><i></i></span><span>Lively Class</span></div><div class="visual-lesson"><span class="lesson-label">让知识清晰可见</span><svg viewBox="0 0 310 130" xmlns="http://www.w3.org/2000/svg"><path d="M35 105H280M35 20V105" fill="none" stroke="#c4d1e7" stroke-width="1.5"/><path id="hero-curve" pathLength="1" d="M43 91C95 91 87 40 143 47S205 92 272 24" fill="none" stroke="#2868ef" stroke-width="4"/><circle class="curve-point" r="7" fill="#7654dc" stroke="white" stroke-width="3"/><path d="M143 47V105" stroke="#b5a0df" stroke-dasharray="4 4"/><rect x="187" y="7" width="68" height="23" rx="5" fill="#eee8fb"/><text x="221" y="23" text-anchor="middle" font-size="12" fill="#6f46b2">知识图示</text></svg></div><div class="visual-player"><span class="play-ring">▶</span><span class="player-track"><i></i></span><span>MP4 + PPTX</span></div></div>
           <div class="visual-caption"><span class="caption-icon">✓</span><span>讲稿、图示与配音<br><strong>汇成一节完整课程</strong></span></div>
         </div>
         </div>
+        <a class="screen-next" href="#workspace" aria-label="下滑进入工作台">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 4v15m-6-6 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
       </section>
-      <section id="workspace" class="workspace content-width" aria-labelledby="workspace-title">
-        <div class="section-heading"><div><p class="section-kicker">COURSE WORKSPACE</p><h2 id="workspace-title">开始你的课程创作</h2></div><p class="section-note">从教材出发，按你的方式讲解。</p></div>
-        <div class="workspace-grid">
+      <section id="workspace" class="screen workspace" aria-labelledby="workspace-title" hidden>
+        <div class="workspace-main content-width screen-scroll">
+          <div id="workspace-intro" class="workspace-intro">
+            <div class="composer-illustration" aria-hidden="true">
+              <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M28 13 14 17a4 4 0 0 0-3 5l6 23a4 4 0 0 0 5 3l8-2" opacity=".43"/>
+                <path d="M26 23a4 4 0 0 1 4-4h12l8 8v22a4 4 0 0 1-4 4H30a4 4 0 0 1-4-4z"/><path d="M42 19v8h8m-16 8h9m-9 7h6M50 7l2.3 5.7L58 15l-5.7 2.3L50 23l-2.3-5.7L42 15l5.7-2.3z"/>
+              </svg>
+            </div>
+            <h2 id="workspace-title" tabindex="-1">开始你的课程创作</h2>
+          </div>
           <form id="upload-form" class="control-panel">
-            <label class="field-title" for="pdf-file"><span class="step-number">01</span>学习资料</label>
-            <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="选择 PDF 文件">
-              <div class="upload-icon">↥</div>
-              <strong id="file-label">拖入 PDF，或点击上传</strong>
-              <span id="pdf-limits">文字版 / 扫描版 PDF</span>
-              <input id="pdf-file" name="file" type="file" accept=".pdf,application/pdf" required>
+            <div class="composer">
+              <label class="sr-only" for="custom-prompt">PPT编排要求</label>
+              <textarea id="custom-prompt" name="custom_prompt" rows="3" maxlength="4000" placeholder="面向谁学习？PPT如何组织？希望什么画风？原文字幕与配音保持完整。"></textarea>
+              <div class="composer-toolbar">
+                <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="选择 PDF 文件" aria-describedby="pdf-limits">
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7V5a2 2 0 0 1 2-2h6l5 5v11a2 2 0 0 1-2 2H8a3 3 0 0 1-3-3v-4m8-11v5h5m-6 9v-5m-2.5 2.5h5"/></svg>
+                  <strong id="file-label">添加 PDF</strong>
+                  <span id="pdf-limits" class="sr-only">文字版 / 扫描版 PDF</span>
+                  <input id="pdf-file" name="file" type="file" accept=".pdf,application/pdf" tabindex="-1" aria-label="上传 PDF" required>
+                </div>
+                <div class="composer-tools">
+                  <button type="button" class="composer-tool" data-settings="model">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15m-15 5h15m-15 5h15"/><rect x="6" y="5" width="4" height="4" rx="1" fill="white"/><rect x="13" y="10" width="4" height="4" rx="1" fill="white"/><rect x="8" y="15" width="4" height="4" rx="1" fill="white"/></svg>
+                    模型配置
+                  </button>
+                  <button type="button" class="composer-tool" data-settings="generation">生成设置</button>
+                  <button id="submit-button" class="primary-button" type="submit">生成一节课 <span aria-hidden="true">↗</span></button>
+                </div>
+              </div>
             </div>
-            <fieldset class="choice-group"><legend class="field-title"><span class="step-number">02</span>生成方式</legend>
-              <label class="choice-card" id="ai-choice"><input type="radio" name="mode" value="ai" checked><strong>AI 生成 · 学科编排</strong></label>
-              <label class="choice-card"><input type="radio" name="mode" value="demo"><strong>确定性演示模式 · 规则生成</strong></label>
-            </fieldset>
-            <input id="narration-mode" name="narration_mode" type="hidden" value="source_verbatim">
-            <p class="source-policy">字幕与配音逐字朗读教材原文，PPT提炼要点、绘制图示。扫描教材以识别文本为准，可下载全文与逐页核对记录。</p>
-            <details id="ai-settings" class="settings-panel" hidden>
-              <summary>模型设置 <span id="ai-ready-label"></span></summary>
-              <div class="advanced-fields">
-                <label for="llm-provider">接口类型</label>
-                <select id="llm-provider" name="llm_provider"><option value="ollama">本机 Ollama</option><option value="openai">兼容 API</option></select>
-                <label for="llm-base-url">API 地址</label>
-                <input id="llm-base-url" name="llm_base_url" type="url" placeholder="http://127.0.0.1:11434 或 https://服务地址/v1">
-                <label for="llm-model">模型</label>
-                <input id="llm-model" name="llm_model" type="text" placeholder="例如 qwen3.5:9b">
-                <label for="llm-api-key">API 密钥</label>
-                <input id="llm-api-key" name="llm_api_key" type="password" autocomplete="off" placeholder="本机 Ollama 可留空">
-                <div class="credential-controls"><label><input id="remember-llm-key" type="checkbox" checked>在本机记住密钥</label><button id="clear-llm-key" class="text-button" type="button" hidden>清除保存</button></div>
-                <span id="llm-key-state" class="credential-state" aria-live="polite"></span>
-                <label for="custom-prompt">PPT编排要求</label>
-                <textarea id="custom-prompt" name="custom_prompt" rows="3" maxlength="4000" placeholder="面向谁学习？PPT如何组织？希望什么画风？原文字幕与配音保持完整。"></textarea>
-                <details class="secondary-settings">
-                  <summary>数学模型（可选）</summary>
-                  <div class="settings-fields">
-                    <label for="llm-math-model">规划模型</label>
-                    <input id="llm-math-model" name="llm_math_model" type="text" maxlength="120" placeholder="留空使用生成模型">
-                    <label for="llm-review-model">复核模型</label>
-                    <input id="llm-review-model" name="llm_review_model" type="text" maxlength="120" placeholder="留空使用生成模型">
-                  </div>
-                </details>
-              </div>
-            </details>
-            <div id="course-style-options" class="advanced-fields template-picker">
-              <h3>自动编排</h3>
-              <p id="director-description" class="result-note">模型阅读教材后，自动识别学科，选择课件风格、页面布局以及图示或动画。你可以在“PPT编排要求”中描述希望达到的效果。</p>
-              <p class="result-note">文科采用场景漫剧，数理化按内容组织图形与推演；实际采用的方案会在生成结果中显示。原创绘图和视频服务可在下方接入。</p>
-            </div>
-            <details id="learner-settings" class="settings-panel">
-              <summary>个性化学习规划 <span>可选</span></summary>
-              <div class="advanced-fields">
-                <label class="source-policy"><input id="learner-enabled" name="learner_enabled" type="checkbox"> 同时生成学习路径与自测建议</label>
-                <label for="learner-background">已有基础</label>
-                <textarea id="learner-background" name="learner_background" rows="2" maxlength="1000" placeholder="例如：已学过基础概念，希望巩固例题与推导。"></textarea>
-                <label for="learner-goal">学习目标</label>
-                <textarea id="learner-goal" name="learner_goal" rows="2" maxlength="1000" placeholder="例如：理解本节内容，并能独立复述知识关系。"></textarea>
-                <label for="learner-days">计划天数</label>
-                <input id="learner-days" name="learner_days" type="number" min="1" max="30" value="3">
-                <label for="learner-minutes">每天可用时间（分钟）</label>
-                <input id="learner-minutes" name="learner_minutes_per_day" type="number" min="5" max="240" value="30">
-                <p class="result-note">模型根据课程片段安排学习、复习与自测。学习计划单独输出，字幕与配音仍完整保留教材原文。</p>
-              </div>
-            </details>
-            <details id="art-settings" class="settings-panel">
-              <summary>原创插画与视频接口 <span>可选</span></summary>
-              <div class="advanced-fields">
-                <p class="result-note">场景漫剧需配置绘图或视频服务：先设定人物与地点，再逐镜绘制完整动漫场景。绘图接口输出插画分镜，视频接口输出动态片段；同时开启时漫剧优先使用视频。仅发送场景描述，小云雀等服务需兼容网关，视频支持Seedance任务协议。密钥仅用于本次任务。</p>
-                <p class="result-note">Seedream等图片模型用于绘制人物与场景，Seedance用于生成动态视频。火山方舟接口根地址可填 https://ark.cn-beijing.volces.com/api/v3，模型ID使用你已开通的图片或视频模型；两类模型分别填写，不要互换。</p>
-                <label for="image-protocol">绘图接口</label>
-                <select id="image-protocol" name="image_protocol"><option value="disabled">关闭</option><option value="images">Images兼容绘图接口（如Seedream）</option><option value="jimeng">即梦文生图（API Key）</option></select>
-                <p class="result-note">即梦3.0使用API Key入口 https://openapi.cv.volces.com，模型填 jimeng_t2i_v30，密钥填 API Key Secret；不填ID、不使用签名鉴权域名。单镜提示词超过800字符会在提交前提示调整。</p>
-                <label for="image-base-url">绘图API根地址</label><input id="image-base-url" name="image_base_url" type="url" placeholder="https://你的绘图网关/v1">
-                <label for="image-model">绘图模型ID</label><input id="image-model" name="image_model" maxlength="160" placeholder="服务提供的模型ID">
-                <label for="image-api-key">绘图密钥（不保存）</label><input id="image-api-key" name="image_api_key" type="password" autocomplete="off">
-                <label for="video-protocol">视频接口</label>
-                <select id="video-protocol" name="video_protocol"><option value="disabled">关闭</option><option value="seedance">Seedance异步任务接口</option></select>
-                <label for="video-base-url">视频API根地址</label><input id="video-base-url" name="video_base_url" type="url" placeholder="https://你的服务/api/v3">
-                <label for="video-model">视频模型/接入点ID</label><input id="video-model" name="video_model" maxlength="160" placeholder="服务提供的模型或接入点ID">
-                <label for="video-api-key">视频密钥（不保存）</label><input id="video-api-key" name="video_api_key" type="password" autocomplete="off">
-                <label for="art-max-assets">每课生成素材数上限</label><input id="art-max-assets" name="art_max_assets" type="number" min="1" max="200" value="12">
-                <p class="result-note">漫剧每镜对应一份素材。生成前会核对分镜总数，超过上限时提示调整，不会自动增加调用。</p>
-              </div>
-            </details>
-            <fieldset class="choice-group"><legend class="field-title"><span class="step-number">03</span>讲解声音</legend>
-              <label class="choice-card compact"><input type="radio" name="voice_mode" value="system" checked><strong>系统配音</strong></label>
-              <label class="choice-card compact" id="tts-choice"><input type="radio" name="voice_mode" value="ai"><strong>AI 配音</strong></label>
-            </fieldset>
-            <details id="tts-settings" class="settings-panel" hidden>
-              <summary>语音设置 <span id="tts-ready-label"></span></summary>
-              <div class="advanced-fields">
-                <label for="tts-base-url">API 地址</label>
-                <input id="tts-base-url" name="tts_base_url" type="url" placeholder="http://127.0.0.1:8766/v1 或 https://服务地址/v1">
-                <label for="tts-model">语音模型</label>
-                <input id="tts-model" name="tts_model" type="text" placeholder="例如 qwen3-tts-0.6b-base">
-                <label for="tts-voice">音色</label>
-                <input id="tts-voice" name="tts_voice" type="text" placeholder="例如 notebook-reference">
-                <label for="tts-api-key">API 密钥</label>
-                <input id="tts-api-key" name="tts_api_key" type="password" autocomplete="off" placeholder="本机服务可留空">
-                <div class="credential-controls"><label><input id="remember-tts-key" type="checkbox" checked>在本机记住密钥</label><button id="clear-tts-key" class="text-button" type="button" hidden>清除保存</button></div>
-                <span id="tts-key-state" class="credential-state" aria-live="polite"></span>
-              </div>
-            </details>
-            <section id="speech-preview" class="voice-preview" aria-label="默认声线试听" hidden>
-              <h3 id="speech-preview-title">声线试听</h3>
-              <audio id="speech-preview-audio" controls preload="none" aria-label="默认讲解声线试听"></audio>
-              <p id="speech-preview-status" hidden></p>
-              <button id="generate-speech-preview" type="button" class="text-button" hidden>生成试听</button>
-            </section>
             <div class="consents">
               <label><input id="rights-confirmed" type="checkbox" required><span>我拥有这份资料的使用权</span></label>
-              <label id="remote-consent-row" hidden><input id="remote-consent" type="checkbox"><span>同意将所需原文发送至所选学院模型或语音服务，并将场景绘制描述发送至已启用的外部媒体服务</span></label>
+              <label id="remote-consent-row" hidden><input id="remote-consent" type="checkbox"><span>同意将所需内容发送至所选外部服务</span></label>
             </div>
-            <button id="submit-button" class="primary-button" type="submit">生成一节课 <span aria-hidden="true">↗</span></button>
+            <div class="composer-status">
+              <p id="submit-error" role="alert" hidden></p>
+              <button id="view-job" class="text-button" type="button" hidden>查看当前任务 ↗</button>
+            </div>
+            <dialog id="workspace-settings" class="settings-dialog" aria-labelledby="settings-title">
+              <header class="settings-header">
+                <h3 id="settings-title">课程设置</h3>
+                <button id="close-settings" type="button" class="dialog-dismiss" aria-label="关闭设置">×</button>
+              </header>
+              <div class="settings-tabs" aria-label="设置类别">
+                <button type="button" data-settings-tab="model" aria-controls="model-panel" aria-pressed="true">模型配置</button>
+                <button type="button" data-settings-tab="generation" aria-controls="generation-panel" aria-pressed="false">生成设置</button>
+              </div>
+              <div class="settings-content" data-scroll-lock>
+                <section id="model-panel" aria-label="模型配置">
+                  <div class="advanced-fields model-fields">
+                    <label for="llm-provider">接口类型</label>
+                    <select id="llm-provider" name="llm_provider"><option value="ollama">本机 Ollama</option><option value="openai">兼容 API</option></select>
+                    <label for="llm-base-url">API 地址</label>
+                    <input id="llm-base-url" name="llm_base_url" type="url" placeholder="http://127.0.0.1:11434 或 https://服务地址/v1">
+                    <div class="model-field-heading">
+                      <label for="llm-model">模型</label>
+                      <span class="model-help">
+                        <button type="button" aria-label="模型用途" aria-describedby="model-help">?</button>
+                        <span id="model-help" class="model-tooltip" role="tooltip">阅读教材、识别学科，编排 PPT 和讲解画面。</span>
+                      </span>
+                    </div>
+                    <input id="llm-model" name="llm_model" type="text" placeholder="例如 qwen3.5:9b">
+                    <div class="model-field-heading">
+                      <label for="llm-math-model">规划模型<span class="optional-label">（可选）</span></label>
+                      <span class="model-help">
+                        <button type="button" aria-label="规划模型用途" aria-describedby="planning-help">?</button>
+                        <span id="planning-help" class="model-tooltip" role="tooltip">规划数学推演的图形构造、操作和演示步骤。</span>
+                      </span>
+                    </div>
+                    <input id="llm-math-model" name="llm_math_model" type="text" maxlength="120" placeholder="留空使用生成模型">
+                    <div class="model-field-heading">
+                      <label for="llm-review-model">复核模型<span class="optional-label">（可选）</span></label>
+                      <span class="model-help">
+                        <button type="button" aria-label="复核模型用途" aria-describedby="review-help">?</button>
+                        <span id="review-help" class="model-tooltip" role="tooltip">对照教材，检查数学推演的来源、文字和画面表达。</span>
+                      </span>
+                    </div>
+                    <input id="llm-review-model" name="llm_review_model" type="text" maxlength="120" placeholder="留空使用生成模型">
+                    <label for="llm-api-key">API 密钥</label>
+                    <input id="llm-api-key" name="llm_api_key" type="password" autocomplete="off" placeholder="本机 Ollama 可留空">
+                    <div class="credential-controls"><label><input id="remember-llm-key" type="checkbox" checked>在本机记住密钥</label><button id="clear-llm-key" class="text-button" type="button" hidden>清除保存</button></div>
+                    <span id="llm-key-state" class="credential-state" aria-live="polite"></span>
+                  </div>
+                </section>
+                <section id="generation-panel" aria-label="生成设置" hidden>
+                  <details id="learner-settings" class="settings-panel">
+                    <summary>个性化学习规划 <span>可选</span></summary>
+                    <div class="advanced-fields">
+                      <label class="source-policy"><input id="learner-enabled" name="learner_enabled" type="checkbox"> 同时生成学习路径与自测建议</label>
+                      <label for="learner-background">已有基础</label>
+                      <textarea id="learner-background" name="learner_background" rows="2" maxlength="1000" placeholder="例如：已学过基础概念，希望巩固例题与推导。"></textarea>
+                      <label for="learner-goal">学习目标</label>
+                      <textarea id="learner-goal" name="learner_goal" rows="2" maxlength="1000" placeholder="例如：理解本节内容，并能独立复述知识关系。"></textarea>
+                      <label for="learner-days">计划天数</label>
+                      <input id="learner-days" name="learner_days" type="number" min="1" max="30" value="3">
+                      <label for="learner-minutes">每天可用时间（分钟）</label>
+                      <input id="learner-minutes" name="learner_minutes_per_day" type="number" min="5" max="240" value="30">
+                    </div>
+                  </details>
+                  <details id="art-settings" class="settings-panel">
+                    <summary>原创插画与视频接口 <span>可选</span></summary>
+                    <div class="advanced-fields">
+                      <label for="image-protocol">绘图接口</label>
+                      <select id="image-protocol" name="image_protocol"><option value="disabled">关闭</option><option value="images">Images兼容绘图接口（如Seedream）</option><option value="jimeng">即梦文生图（API Key）</option></select>
+                      <label for="image-base-url">绘图API根地址</label><input id="image-base-url" name="image_base_url" type="url" placeholder="https://你的绘图网关/v1">
+                      <label for="image-model">绘图模型ID</label><input id="image-model" name="image_model" maxlength="160" placeholder="服务提供的模型ID">
+                      <label for="image-api-key">绘图密钥（不保存）</label><input id="image-api-key" name="image_api_key" type="password" autocomplete="off">
+                      <label for="video-protocol">视频接口</label>
+                      <select id="video-protocol" name="video_protocol"><option value="disabled">关闭</option><option value="seedance">Seedance异步任务接口</option></select>
+                      <label for="video-base-url">视频API根地址</label><input id="video-base-url" name="video_base_url" type="url" placeholder="https://你的服务/api/v3">
+                      <label for="video-model">视频模型/接入点ID</label><input id="video-model" name="video_model" maxlength="160" placeholder="服务提供的模型或接入点ID">
+                      <label for="video-api-key">视频密钥（不保存）</label><input id="video-api-key" name="video_api_key" type="password" autocomplete="off">
+                      <label for="art-max-assets">每课生成素材数上限</label><input id="art-max-assets" name="art_max_assets" type="number" min="1" max="200" value="12">
+                    </div>
+                  </details>
+                  <fieldset class="choice-group"><legend class="field-title">讲解声音</legend>
+                    <label class="choice-card compact"><input type="radio" name="voice_mode" value="system" checked><strong>系统配音</strong></label>
+                    <label class="choice-card compact" id="tts-choice"><input type="radio" name="voice_mode" value="ai"><strong>AI 配音</strong></label>
+                  </fieldset>
+                  <details id="tts-settings" class="settings-panel" hidden>
+                    <summary>语音设置 <span id="tts-ready-label"></span></summary>
+                    <div class="advanced-fields">
+                      <label for="tts-base-url">API 地址</label>
+                      <input id="tts-base-url" name="tts_base_url" type="url" placeholder="http://127.0.0.1:8766/v1 或 https://服务地址/v1">
+                      <label for="tts-model">语音模型</label>
+                      <input id="tts-model" name="tts_model" type="text" placeholder="例如 qwen3-tts-0.6b-base">
+                      <label for="tts-voice">音色</label>
+                      <input id="tts-voice" name="tts_voice" type="text" placeholder="例如 notebook-reference">
+                      <label for="tts-api-key">API 密钥</label>
+                      <input id="tts-api-key" name="tts_api_key" type="password" autocomplete="off" placeholder="本机服务可留空">
+                      <div class="credential-controls"><label><input id="remember-tts-key" type="checkbox" checked>在本机记住密钥</label><button id="clear-tts-key" class="text-button" type="button" hidden>清除保存</button></div>
+                      <span id="tts-key-state" class="credential-state" aria-live="polite"></span>
+                    </div>
+                  </details>
+                  <section id="speech-preview" class="voice-preview" aria-label="默认声线试听" hidden>
+                    <h3 id="speech-preview-title">声线试听</h3>
+                    <audio id="speech-preview-audio" controls preload="none" aria-label="默认讲解声线试听"></audio>
+                    <p id="speech-preview-status" hidden></p>
+                    <button id="generate-speech-preview" type="button" class="text-button" hidden>生成试听</button>
+                  </section>
+                </section>
+              </div>
+              <div class="settings-footer"><button id="done-settings" class="primary-button" type="button">完成</button></div>
+            </dialog>
           </form>
-          <aside id="workflow" class="process-panel" aria-label="生成流程">
-            <p class="panel-kicker">HOW IT WORKS</p>
-            <h3>从教材到课程</h3>
-            <p class="process-intro">把内容组织与画面表达串联起来，<br>让每个知识点都有讲解的空间。</p>
-            <ol class="timeline">
-              <li><span class="timeline-icon">01</span><div><strong>解析学习资料</strong><p>提取文字，关联教材原文。</p></div></li>
-              <li><span class="timeline-icon">02</span><div><strong>识别学科与编排</strong><p>选择数理化、人文或专业模板。</p></div></li>
-              <li><span class="timeline-icon">03</span><div><strong>绘制教学画面</strong><p>数理推演与文科故事线分别组织。</p></div></li>
-              <li><span class="timeline-icon">04</span><div><strong>导出视频与课件</strong><p>配音与画面汇合，交付学习成果。</p></div></li>
-            </ol>
-            <div class="process-foot"><span>你的课程成果</span><div><strong>MP4 视频</strong><strong>PPTX 课件</strong><strong>讲稿与来源</strong></div></div>
-          </aside>
+          <section id="job-section" class="results" hidden aria-labelledby="job-title">
+              <div class="section-heading"><h2 id="job-title" tabindex="-1">生成结果</h2><div class="job-actions"><button id="edit-job" class="text-button" type="button">返回编辑</button><button id="retry-button" class="text-button" type="button" hidden>重新生成</button><button id="delete-button" class="text-button" type="button" hidden>删除任务</button></div></div>
+              <div class="job-card" aria-live="polite"><div class="job-status-row"><span id="job-badge" class="status-badge">排队中</span><span id="job-filename" class="filename"></span></div><h3 id="job-stage">等待处理</h3><div class="progress-track"><div id="job-progress" class="progress-fill"></div></div><p id="job-message"></p></div>
+              <div id="lesson-result" hidden>
+                <div id="course-result-actions" class="course-result-actions">
+                  <button id="save-course" class="primary-button" type="button" hidden>
+                    <svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-7-4-7 4z"/></svg>保存到我的课程
+                  </button>
+                  <button id="share-course" class="composer-tool" type="button" hidden>
+                    <svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10 17 5m-10 9 10 5"/><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="4" r="2.5"/><circle cx="19" cy="20" r="2.5"/></svg>分享到社区
+                  </button>
+                </div>
+                <div class="result-grid">
+                  <div class="video-card">
+                    <div class="card-heading"><h3>教学视频</h3><a id="download-video" href="#" download="LivelyClass-lesson.mp4">下载 MP4 ↗</a></div>
+                    <video id="lesson-video" controls preload="metadata" playsinline></video>
+                    <p id="voice-note" class="result-note"></p>
+                    <div id="presentation-export" class="presentation-export" hidden><strong>PPT 课件</strong><a id="download-presentation" href="#" download="LivelyClass-lesson.pptx">下载 PPTX ↗</a></div>
+                    <div id="source-exports" class="presentation-export" hidden><strong>原文与字幕</strong><a id="download-subtitles" href="#">SRT字幕 ↗</a><a id="download-transcript" href="#">教材全文 ↗</a><a id="download-coverage" href="#">逐页核对 ↗</a></div>
+                  </div>
+                  <div class="overview-card"><h3 id="lesson-title"></h3><p id="lesson-objective"></p><p id="ppt-template-result" class="result-note"></p><p id="source-route-result" class="result-note"></p><div class="overview-meta"><span id="segment-count"></span><span id="generation-mode"></span></div></div>
+                </div>
+                <details class="generation-records">
+                  <summary>生成记录</summary>
+                  <div id="lesson-notice"></div><div id="math-report" hidden></div>
+                  <a id="download-math-scenes" class="text-button" href="#" hidden>下载场景数据 ↗</a>
+                </details>
+                <section id="learning-plan-result" class="overview-card" hidden>
+                  <div class="card-heading"><h3>你的学习计划</h3><a id="download-learning-plan" href="#">下载学习计划 ↗</a></div>
+                  <p id="learning-plan-overview"></p><p id="learning-plan-time" class="result-note"></p>
+                  <div id="learning-plan-sessions"></div>
+                </section>
+                <div class="script-heading"><h3>逐段讲稿与来源</h3></div>
+                <div id="segments" class="segments"></div>
+              </div>
+          </section>
         </div>
       </section>
-      <section id="job-section" class="results content-width" hidden aria-live="polite">
-        <div class="section-heading"><h2>生成结果</h2><div class="job-actions"><button id="retry-button" class="text-button" type="button" hidden>重新生成</button><button id="delete-button" class="text-button" type="button" hidden>删除任务</button></div></div>
-        <div class="job-card"><div class="job-status-row"><span id="job-badge" class="status-badge">排队中</span><span id="job-filename" class="filename"></span></div><h3 id="job-stage">等待处理</h3><div class="progress-track"><div id="job-progress" class="progress-fill"></div></div><p id="job-message"></p></div>
-        <div id="lesson-result" hidden>
-          <div class="result-grid">
-            <div class="video-card">
-              <div class="card-heading"><h3>教学视频</h3><a id="download-video" href="#" download="LivelyClass-lesson.mp4">下载 MP4 ↗</a></div>
-              <video id="lesson-video" controls preload="metadata" playsinline></video>
-              <p id="voice-note" class="result-note"></p>
-              <div id="presentation-export" class="presentation-export" hidden><strong>PPT 课件</strong><a id="download-presentation" href="#" download="LivelyClass-lesson.pptx">下载 PPTX ↗</a></div>
-              <div id="source-exports" class="presentation-export" hidden><strong>原文与字幕</strong><a id="download-subtitles" href="#">SRT字幕 ↗</a><a id="download-transcript" href="#">教材全文 ↗</a><a id="download-coverage" href="#">逐页核对 ↗</a></div>
-            </div>
-            <div class="overview-card"><h3 id="lesson-title"></h3><p id="lesson-objective"></p><p id="ppt-template-result" class="result-note"></p><p id="source-route-result" class="result-note"></p><div class="overview-meta"><span id="segment-count"></span><span id="generation-mode"></span></div></div>
-          </div>
-          <details class="generation-records">
-            <summary>生成记录</summary>
-            <div id="lesson-notice"></div><div id="math-report" hidden></div>
-            <a id="download-math-scenes" class="text-button" href="#" hidden>下载场景数据 ↗</a>
-          </details>
-          <section id="learning-plan-result" class="overview-card" hidden>
-            <div class="card-heading"><h3>你的学习计划</h3><a id="download-learning-plan" href="#">下载学习计划 ↗</a></div>
-            <p id="learning-plan-overview"></p><p id="learning-plan-time" class="result-note"></p>
-            <div id="learning-plan-sessions"></div>
-          </section>
-          <div class="script-heading"><h3>逐段讲稿与来源</h3></div>
-          <div id="segments" class="segments"></div>
+      <section id="my-courses" class="screen collection-screen" aria-labelledby="my-courses-title" hidden>
+        <div class="collection-inner content-width screen-scroll">
+          <h2 id="my-courses-title" tabindex="-1">我的课程</h2>
+          <div id="my-course-list"></div>
+        </div>
+      </section>
+      <section id="community" class="screen collection-screen" aria-labelledby="community-title" hidden>
+        <div class="collection-inner content-width screen-scroll">
+          <h2 id="community-title" tabindex="-1">共享社区</h2>
+          <div id="community-course-list"></div>
         </div>
       </section>
     </main>
-    <footer class="site-footer"><div class="footer-inner"><span>Lively Class<strong>——AI教育Agent</strong></span><span>让知识跃然眼前，让课堂生动起来。</span><a href="#workspace">返回工作台 ↑</a></div></footer>
   </div>
 </body>
 </html>

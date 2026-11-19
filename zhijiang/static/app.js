@@ -2,8 +2,44 @@ const $ = (selector) => document.querySelector(selector);
 const form = $("#upload-form");
 const fileInput = $("#pdf-file");
 const dropzone = $("#dropzone");
-// Reveal a required field before the browser tries to focus it in a closed panel.
+const settingsDialog = $("#workspace-settings");
+const composer = $(".composer");
+let reportingInvalid = false;
+
+function showSettings(category) {
+  for (const name of ["model", "generation"]) {
+    $(`#${name}-panel`).hidden = name !== category;
+    $(`[data-settings-tab="${name}"]`).setAttribute("aria-pressed", String(name === category));
+  }
+  $(".settings-content").scrollTop = 0;
+  if (!settingsDialog.open) settingsDialog.showModal();
+}
+
+for (const button of document.querySelectorAll("[data-settings], [data-settings-tab]")) {
+  button.addEventListener("click", () => showSettings(button.dataset.settings || button.dataset.settingsTab));
+}
+for (const selector of ["#close-settings", "#done-settings"]) {
+  $(selector).addEventListener("click", () => settingsDialog.close());
+}
+for (const button of settingsDialog.querySelectorAll(".model-help button")) {
+  button.addEventListener("click", () => button.focus({preventScroll: true}));
+}
+settingsDialog.addEventListener("keydown", event => {
+  if (event.key === "Enter" && event.target.matches('input:not([type="checkbox"]):not([type="radio"])')) {
+    event.preventDefault();
+  }
+});
+
+// Open the panel containing the first invalid field before native validation focuses it.
 form.addEventListener("invalid", (event) => {
+  if (reportingInvalid) {
+    event.preventDefault();
+    return;
+  }
+  reportingInvalid = true;
+  queueMicrotask(() => { reportingInvalid = false; });
+  const category = event.target.closest("#model-panel, #generation-panel");
+  if (category) showSettings(category.id.replace("-panel", ""));
   for (let parent = event.target.parentElement; parent; parent = parent.parentElement) {
     if (parent.tagName === "DETAILS") parent.open = true;
   }
@@ -11,6 +47,7 @@ form.addEventListener("invalid", (event) => {
 const representationNames = {geometry: "可计算几何", process: "过程图", relationship: "关系图", comparison: "对比图", source_figure: "原文图示讲解"};
 const linkedJobId = new URLSearchParams(window.location.search).get("job") || "";
 let currentJobId = /^[0-9a-f]{32}$/.test(linkedJobId) ? linkedJobId : localStorage.getItem("zhijiang-job-id");
+let jobViewActive = Boolean(currentJobId);
 let pollTimer = null;
 let config = null;
 let activeProvider = $("#llm-provider").value;
@@ -25,21 +62,43 @@ let speechPreviewTimer = null;
 let shownSettingsJobId = null;
 let voiceSelectionEdited = false;
 
-function updateDirectorNote() {
-  $("#director-description").textContent = selected("mode") === "ai"
-    ? "模型阅读教材后，自动识别学科，选择课件风格、页面布局以及图示或动画。你可以在‘PPT编排要求’中描述希望达到的效果。"
-    : "演示模式按教材顺序生成基础图文课件。选择AI生成后，由模型自动识别学科并安排画面。";
+function showSubmitError(message) {
+  const status = $("#submit-error");
+  status.textContent = message;
+  status.hidden = !message;
 }
 
+function showJobView(active, focus = false) {
+  jobViewActive = active;
+  form.hidden = active;
+  $("#workspace-intro").hidden = active;
+  $("#job-section").hidden = !active;
+  $("#view-job").hidden = active || !currentJobId;
+  if (!active) $("#lesson-video").pause();
+  if (focus) {
+    $(".workspace-main").scrollTop = 0;
+    $(active ? "#job-title" : "#workspace-title").focus({preventScroll: true});
+  }
+}
+
+$("#edit-job").addEventListener("click", () => showJobView(false, true));
+$("#view-job").addEventListener("click", () => showJobView(true, true));
+
 function appendDirectorOptions(body) {
-  const ai = selected("mode") === "ai";
-  body.append("style_mode", ai ? "subject" : "template");
-  body.append("animation_mode", ai ? "auto" : "basic");
+  body.append("style_mode", "subject");
+  body.append("animation_mode", "auto");
   body.append("ppt_template", "paper"); // Initial layout only; AI routing selects the actual template.
   body.append("content_checks", "warn");
   body.append("use_illustrations", "true");
-  body.append("learner_enabled", String(ai && $("#learner-enabled").checked));
+  body.append("learner_enabled", String($("#learner-enabled").checked));
   for (const name of ["learner_background", "learner_goal", "learner_days", "learner_minutes_per_day"]) {
+    body.append(name, form.elements[name].value);
+  }
+}
+
+function appendModelOptions(body) {
+  body.append("mode", "ai");
+  for (const name of ["llm_provider", "llm_base_url", "llm_model", "llm_math_model", "llm_review_model", "llm_api_key", "custom_prompt"]) {
     body.append(name, form.elements[name].value);
   }
 }
@@ -217,9 +276,7 @@ function clearSubmittedKeys() {
 }
 
 function updateConsent() {
-  const ai = selected("mode") === "ai";
   const aiVoice = selected("voice_mode") === "ai";
-  $("#ai-settings").hidden = !ai;
   $("#tts-settings").hidden = !aiVoice;
   const modelURL = $("#llm-base-url").value || config?.llm_base_url || "";
   const ttsURL = $("#tts-base-url").value || config?.tts_base_url || "";
@@ -236,7 +293,7 @@ function updateConsent() {
       $(`#${kind}-${field}`).required = enabled && (field !== "api-key" || remote);
     }
   }
-  const remote = (ai && (!isLocalURL(modelURL) || cloudModel)) || (aiVoice && !localVoice) || remoteArt;
+  const remote = !isLocalURL(modelURL) || cloudModel || (aiVoice && !localVoice) || remoteArt;
   $("#remote-consent-row").hidden = !remote;
   $("#remote-consent").required = remote;
   if (!remote) $("#remote-consent").checked = false;
@@ -244,9 +301,9 @@ function updateConsent() {
   const usesDefaultModel = provider === config?.llm_provider &&
     modelURL.replace(/\/$/, "") === config?.llm_base_url?.replace(/\/$/, "") &&
     modelName === config?.llm_model;
-  $("#llm-base-url").required = ai && provider !== config?.llm_provider;
-  $("#llm-model").required = ai && provider !== config?.llm_provider;
-  $("#llm-api-key").required = ai && provider === "openai" && !isLocalURL(modelURL) && !hasCredential("llm") && !(usesDefaultModel && config?.llm_ready);
+  $("#llm-base-url").required = provider !== config?.llm_provider;
+  $("#llm-model").required = provider !== config?.llm_provider;
+  $("#llm-api-key").required = provider === "openai" && !isLocalURL(modelURL) && !hasCredential("llm") && !(usesDefaultModel && config?.llm_ready);
   $("#llm-api-key").placeholder = hasCredential("llm") ? "已保存，留空即可使用" : provider === "ollama" ? "本机 Ollama 可留空" : "填写 API 密钥";
   for (const name of ["tts_base_url", "tts_model", "tts_voice"]) {
     form.elements[name].required = aiVoice;
@@ -255,7 +312,6 @@ function updateConsent() {
     $("#tts-model").value === config?.tts_model && $("#tts-voice").value === config?.tts_voice;
   $("#tts-api-key").required = aiVoice && !localVoice && !hasCredential("tts") && !(usesDefaultVoice && config?.ai_tts_ready);
   $("#tts-api-key").placeholder = hasCredential("tts") ? "已保存，留空即可使用" : localVoice ? "本机服务可留空" : "填写 API 密钥";
-  $("#ai-ready-label").textContent = modelName;
   $("#tts-ready-label").textContent = $("#tts-voice").value;
   updateSpeechPreview();
 }
@@ -269,20 +325,31 @@ function setFile(file) {
 }
 
 dropzone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); fileInput.click(); }
+  if (event.target === dropzone && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    fileInput.click();
+  }
 });
-dropzone.addEventListener("dragover", (event) => { event.preventDefault(); dropzone.classList.add("dragover"); });
-dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
-dropzone.addEventListener("drop", (event) => {
-  event.preventDefault(); dropzone.classList.remove("dragover");
+composer.addEventListener("dragover", (event) => {
+  if (!event.dataTransfer.types.includes("Files")) return;
+  event.preventDefault();
+  composer.classList.add("dragover");
+});
+composer.addEventListener("dragleave", event => {
+  if (!composer.contains(event.relatedTarget)) composer.classList.remove("dragover");
+});
+composer.addEventListener("drop", (event) => {
+  if (!event.dataTransfer.types.includes("Files")) return;
+  event.preventDefault();
+  composer.classList.remove("dragover");
   if (event.dataTransfer.files.length) setFile(event.dataTransfer.files[0]);
 });
-fileInput.addEventListener("change", () => { if (fileInput.files.length) $("#file-label").textContent = fileInput.files[0].name; });
-form.querySelectorAll('input[type="radio"]').forEach((input) => input.addEventListener("change", () => {
-  if (selected("mode") === "demo") {
-    $("#image-protocol").value = "disabled";$("#video-protocol").value = "disabled";
-  }
-  updateDirectorNote(); updateConsent();
+fileInput.addEventListener("change", () => {
+  $("#file-label").textContent = fileInput.files[0]?.name || "添加 PDF";
+});
+form.querySelectorAll('input[name="voice_mode"]').forEach(input => input.addEventListener("change", () => {
+  voiceSelectionEdited = true;
+  updateConsent();
 }));
 for (const kind of ["image","video"]) {
   $(`#${kind}-protocol`).addEventListener("change", () => {
@@ -291,7 +358,6 @@ for (const kind of ["image","video"]) {
       $("#image-model").value = "jimeng_t2i_v30";
       $("#image-api-key").value = "";
     }
-    if ($(`#${kind}-protocol`).value !== "disabled") form.querySelector('input[name="mode"][value="ai"]').checked = true;
     $("#remote-consent").checked = false; updateConsent();
   });
   $(`#${kind}-base-url`).addEventListener("input", () => {
@@ -299,7 +365,6 @@ for (const kind of ["image","video"]) {
   });
   $(`#${kind}-model`).addEventListener("input", () => {$("#remote-consent").checked=false;});
 }
-form.querySelectorAll('input[name="voice_mode"]').forEach(input => input.addEventListener("change", () => { voiceSelectionEdited = true; }));
 $("#llm-provider").addEventListener("change", () => {
   const fields = ["llm_base_url", "llm_model", "llm_review_model", "llm_math_model"];
   providerProfiles.set(activeProvider, Object.fromEntries(fields.map(name => [name, form.elements[name].value])));
@@ -363,8 +428,6 @@ $("#speech-preview-audio").addEventListener("error", () => {
 function showJob(job) {
   if (shownSettingsJobId !== job.id) {
     shownSettingsJobId = job.id;
-    const modeChoice = form.querySelector(`input[name="mode"][value="${job.mode}"]`);
-    if (modeChoice) modeChoice.checked = true;
     const voiceChoice = form.querySelector(`input[name="voice_mode"][value="${job.voice_mode}"]`);
     if (voiceChoice && !voiceSelectionEdited) voiceChoice.checked = true;
     // A delayed restore of the previous job must not replace a new choice.
@@ -393,12 +456,12 @@ function showJob(job) {
       $("#tts-model").value = job.voice_settings.model || "";
       $("#tts-voice").value = job.voice_settings.voice || "";
     }
-    updateDirectorNote(); updateConsent();
+    updateConsent();
     rememberServiceFields();
     refreshCredential("llm"); refreshCredential("tts");
     if (!$("#remote-consent-row").hidden) $("#remote-consent").checked = job.remote_consent;
   }
-  $("#job-section").hidden = false;
+  showJobView(jobViewActive);
   $("#job-filename").textContent = job.filename || "";
   const badge = $("#job-badge");
   const states = { queued: "排队中", running: "生成中", completed: "已完成", failed: "失败" };
@@ -412,6 +475,7 @@ function showJob(job) {
   $("#presentation-export").hidden = !(job.status === "completed" && job.has_presentation);
   $("#retry-button").hidden = job.status !== "failed";
   $("#delete-button").hidden = !["completed", "failed"].includes(job.status);
+  window.LivelyCourses?.setJob(job);
 }
 
 function addSegment(segment, index) {
@@ -472,8 +536,10 @@ function addSegment(segment, index) {
   $("#segments").append(details);
 }
 
-async function showLesson(jobId) {
+async function showLesson(job) {
+  const jobId = job.id;
   const lesson = await getJSON(`/api/jobs/${jobId}/lesson`);
+  if (jobId !== currentJobId) return;
   $("#lesson-result").hidden = false;
   $("#lesson-title").textContent = lesson.title;
   $("#lesson-objective").textContent = lesson.objective;
@@ -498,8 +564,7 @@ async function showLesson(jobId) {
   const mediumNames = {svg:"SVG图解", computed:"连续图形演示", scene_drama:"场景漫剧", generated_illustration:"原创插画"};
   const actualMedia = [...new Set(Object.values(lesson.deck_plan?.visual_story?.visuals || {}).map(v => mediumNames[v.executed_medium]).filter(Boolean))];
   $("#source-route-result").textContent = [routing ? `已识别学科：${routing.classification.subject} · ${routedTemplate?.name || "课程模板"}` : "",
-    actualMedia.length ? `实际画面：${actualMedia.join("、")}` : "",
-    literal ? "字幕、配音逐字使用教材提取文本；PPT独立提炼与绘图。" : ""].filter(Boolean).join("\n");
+    actualMedia.length ? `实际画面：${actualMedia.join("、")}` : ""].filter(Boolean).join("\n");
   $("#source-exports").hidden = !literal;
   $("#download-subtitles").href = `/api/jobs/${jobId}/subtitles`;
   $("#download-transcript").href = `/api/jobs/${jobId}/transcript`;
@@ -535,28 +600,36 @@ async function showLesson(jobId) {
     `${report.scene_count} 个${report.scene_type === "general" ? "教学" : "数学推演"}场景 · ${report.renderer}` : report.reason || "基础图示";
   $("#download-math-scenes").hidden = !report.scene_count;
   $("#download-math-scenes").href = `/api/jobs/${jobId}/scenes`;
+  window.LivelyCourses?.setJob(job, lesson);
 }
 
 async function refreshJob() {
-  if (!currentJobId) return;
+  const jobId = currentJobId;
+  if (!jobId) return;
   try {
-    const job = await getJSON(`/api/jobs/${currentJobId}`);
+    const job = await getJSON(`/api/jobs/${jobId}`);
+    if (jobId !== currentJobId) return;
     showJob(job);
     if (job.status === "completed") {
       clearInterval(pollTimer); pollTimer = null;
-      await showLesson(currentJobId);
+      await showLesson(job);
     } else if (job.status === "failed") {
       clearInterval(pollTimer); pollTimer = null;
       $("#lesson-result").hidden = true;
     }
   } catch (error) {
+    if (jobId !== currentJobId) return;
     clearInterval(pollTimer); pollTimer = null;
     if (error.message.includes("任务不存在")) {
       currentJobId = null;
       localStorage.removeItem("zhijiang-job-id");
+      showJobView(false);
+      window.LivelyCourses?.setJob(null);
+      return;
     }
-    $("#job-section").hidden = false;
-    $("#job-stage").textContent = error.message;
+    $("#job-message").textContent = error.message;
+    $("#job-message").hidden = false;
+    if (!jobViewActive) showSubmitError(error.message);
   }
 }
 
@@ -576,6 +649,7 @@ function startPolling() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  showSubmitError("");
   if (!form.reportValidity()) return;
   const button = $("#submit-button");
   button.disabled = true;
@@ -585,17 +659,12 @@ form.addEventListener("submit", async (event) => {
     await Promise.all([saveCredential("llm"), saveCredential("tts")]);
     const body = new FormData();
     body.append("file", fileInput.files[0]);
-    body.append("mode", selected("mode"));
+    appendModelOptions(body);
     body.append("voice_mode", selected("voice_mode"));
     appendDirectorOptions(body);
     appendSourceOptions(body);
     body.append("rights_confirmed", String($("#rights-confirmed").checked));
     body.append("remote_consent", String($("#remote-consent").checked));
-    if (selected("mode") === "ai") {
-      for (const name of ["llm_provider", "llm_base_url", "llm_model", "llm_math_model", "llm_review_model", "llm_api_key", "custom_prompt"]) {
-        body.append(name, form.elements[name].value);
-      }
-    }
     if (selected("voice_mode") === "ai") {
       for (const name of ["tts_base_url", "tts_model", "tts_voice", "tts_api_key"]) {
         body.append(name, form.elements[name].value);
@@ -606,11 +675,11 @@ form.addEventListener("submit", async (event) => {
     currentJobId = job.id;
     localStorage.setItem("zhijiang-job-id", job.id);
     $("#lesson-result").hidden = true;
+    showJobView(true, true);
     showJob(job);
-    $("#job-section").scrollIntoView({ behavior: "smooth", block: "start" });
     startPolling();
   } catch (error) {
-    alert(error.message);
+    showSubmitError(error.message);
   } finally {
     button.disabled = false;
     button.innerHTML = '生成一节课 <span aria-hidden="true">↗</span>';
@@ -621,9 +690,11 @@ $("#delete-button").addEventListener("click", async () => {
   if (!currentJobId || !confirm("确定删除此任务的本地 PDF、课程、视频和 PPT 吗？")) return;
   try {
     await getJSON(`/api/jobs/${currentJobId}`, { method: "DELETE" });
+    clearInterval(pollTimer); pollTimer = null;
     currentJobId = null;
     localStorage.removeItem("zhijiang-job-id");
-    $("#job-section").hidden = true;
+    showJobView(false, true);
+    window.LivelyCourses?.setJob(null);
     $("#lesson-result").hidden = true;
     $("#lesson-video").removeAttribute("src");
     $("#lesson-video").load();
@@ -638,17 +709,12 @@ $("#retry-button").addEventListener("click", async () => {
     rememberServiceFields();
     await Promise.all([saveCredential("llm"), saveCredential("tts")]);
     const body = new FormData();
-    body.append("mode", selected("mode"));
+    appendModelOptions(body);
     body.append("voice_mode", selected("voice_mode"));
     appendDirectorOptions(body);
     appendSourceOptions(body);
     body.append("remote_consent", String($("#remote-consent").checked));
     body.append("replace_settings", "true");
-    if (selected("mode") === "ai") {
-      for (const name of ["llm_provider", "llm_base_url", "llm_model", "llm_math_model", "llm_review_model", "llm_api_key", "custom_prompt"]) {
-        body.append(name, form.elements[name].value);
-      }
-    }
     if (selected("voice_mode") === "ai") {
       for (const name of ["tts_base_url", "tts_model", "tts_voice", "tts_api_key"]) {
         body.append(name, form.elements[name].value);
@@ -673,9 +739,8 @@ $("#retry-button").addEventListener("click", async () => {
       $("#submit-button").disabled = true;
       $("#retry-button").disabled = true;
       $("#submit-button").textContent = "请重启服务以启用原文课程";
-      $(".source-policy").textContent = "界面已更新，当前后台仍是旧版本。请重启启动服务的终端，再使用原文字幕、学科编排与绘图接口。";
+      showSubmitError("请重启课程服务后再生成。");
     }
-    updateDirectorNote();
     $("#pdf-limits").textContent = `文字版 / 扫描版 · ${Math.round(config.max_pdf_bytes / 1024 / 1024)} MB 以内`;
     $("#llm-provider").value = config.llm_provider === "ollama" ? "ollama" : "openai";
     activeProvider = $("#llm-provider").value;
@@ -709,13 +774,12 @@ $("#retry-button").addEventListener("click", async () => {
       $(`#remember-${kind}-key`).disabled = !config.credential_persistence;
       if (!config.credential_persistence) $(`#remember-${kind}-key`).checked = false;
     }
-    if (!config.llm_ready) $("#ai-settings").open = true;
     if (!config.ai_tts_ready) $("#tts-settings").open = true;
     updateConsent();
     refreshCredential("llm"); refreshCredential("tts");
     if (currentJobId) startPolling();
   } catch (error) {
-    $("#ai-ready-label").textContent = "配置读取失败";
+    showSubmitError("配置读取失败，请刷新页面后重试。");
     $("#tts-ready-label").textContent = "配置读取失败";
   }
 })();
