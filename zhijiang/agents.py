@@ -112,7 +112,13 @@ class DemoAgents:
     def extract_knowledge(self, document: SourceDocument) -> KnowledgeBundle:
         candidates = _candidates(document)
         if len(document.pages) <= 2:
-            selected = candidates[:6]
+            # Repeated page headers should not displace teaching excerpts.
+            opening_lines = Counter(
+                next(iter(page.text.splitlines()), "").strip(" •●·\t")[:220]
+                for page in document.pages
+            )
+            body = [(page, quote) for page, quote in candidates if opening_lines[quote] < 2]
+            selected = (body if len(body) >= 6 else candidates)[:6]
         else:
             selected = []
             per_page: dict[int, int] = {}
